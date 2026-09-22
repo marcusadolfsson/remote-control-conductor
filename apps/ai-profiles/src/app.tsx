@@ -22,7 +22,12 @@ import { PathSetupBannerHost } from '@/features/onboarding/components/path-setup
 import { WelcomeDialog } from '@/features/onboarding/components/welcome-dialog'
 import { useProfileLastUsed } from '@/features/profiles/api/use-profile-last-used'
 import { useProfiles } from '@/features/profiles/api/use-profiles'
-import { resolveSelection, useSidebarEntries } from '@/features/profiles/api/use-sidebar-entries'
+import {
+  entryId,
+  resolveSelection,
+  shortcutEntries,
+  useSidebarEntries,
+} from '@/features/profiles/api/use-sidebar-entries'
 import { useSidebarSelection } from '@/features/profiles/api/use-sidebar-selection'
 import { EmptyStateScreen } from '@/features/profiles/components/empty-state-screen'
 import { ProfileDetailSkeleton } from '@/features/profiles/components/profile-detail-skeleton'
@@ -118,12 +123,9 @@ function AppContent() {
     onDeleteSelected: () => setDialog({ kind: 'delete' }),
   })
 
-  // ⌘1..⌘9 in sidebar order: this Mac's profiles, then each server's.
+  // ⌘1..⌘9 in sidebar order: this Mac's entries, then each server's profiles.
   const remoteIds = remoteProfiles.map((profile) => profile.id)
-  const shortcutTargets = [
-    ...entries.flatMap((entry) => (entry.kind === 'managed' ? [entry.profile.id] : [])),
-    ...remoteIds,
-  ]
+  const shortcutTargets = [...shortcutEntries(entries).map(entryId), ...remoteIds]
 
   function requestCreateProfile() {
     setDialog({ kind: 'create' })
