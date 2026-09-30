@@ -90,6 +90,14 @@ impl HostClient {
         self.call(Method::POST, path, &[], Some(body)).await
     }
 
+    pub async fn put<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> AppResult<Answer<T>> {
+        self.call(Method::PUT, path, &[], Some(body)).await
+    }
+
     /// A DELETE that answers with a body.
     pub async fn delete_for<T: DeserializeOwned>(&self, path: &str) -> AppResult<Answer<T>> {
         self.call(Method::DELETE, path, &[], None::<&()>).await

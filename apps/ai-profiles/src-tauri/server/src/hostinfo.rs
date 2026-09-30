@@ -5,7 +5,7 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use ai_profiles_core::api::{ClaudeInfo, HostInfo, TmuxInfo, API_VERSION};
+use ai_profiles_core::api::{ClaudeInfo, HostInfo, HostSettings, TmuxInfo, API_VERSION};
 
 use crate::config::Config;
 
@@ -68,7 +68,7 @@ pub fn tmux_version() -> Option<String> {
     first_line(Path::new("tmux"), &["-V"])
 }
 
-pub fn host_info(config: &Config) -> HostInfo {
+pub fn host_info(config: &Config, settings: HostSettings) -> HostInfo {
     HostInfo {
         hostname: hostname(),
         home: config.home.display().to_string(),
@@ -84,6 +84,7 @@ pub fn host_info(config: &Config) -> HostInfo {
         }),
         accounts_base: config.accounts_base.display().to_string(),
         includes_default: config.include_default,
+        settings: Some(settings),
     }
 }
 

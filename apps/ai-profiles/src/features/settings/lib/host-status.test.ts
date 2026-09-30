@@ -13,6 +13,7 @@ const answered: HostInfo = {
   claude: { path: '/home/m/.local/bin/claude', version: '2.1.282 (Claude Code)' },
   accountsBase: '/home/m/.claude-accounts',
   includesDefault: false,
+  settings: { remoteControlSuffix: null },
 }
 
 describe('hostStatus', () => {

@@ -52,6 +52,24 @@ pub struct Launch<'a> {
     pub trust_folder: bool,
 }
 
+/// Pure: `name` with `suffix` after it in parentheses, "Deploy (xjopa1)",
+/// unless it ends that way already: a session named that way by hand, or
+/// resumed under the name it was started with.
+pub fn with_host_suffix(name: String, suffix: Option<&str>) -> String {
+    let Some(suffix) = suffix.map(str::trim).filter(|suffix| !suffix.is_empty()) else {
+        return name;
+    };
+    let tail = format!("({suffix})");
+    if name
+        .trim_end()
+        .to_lowercase()
+        .ends_with(&tail.to_lowercase())
+    {
+        return name;
+    }
+    format!("{} {tail}", name.trim_end())
+}
+
 /// The command a window runs. `env` sets the account's config dir (or, for
 /// `default`, removes any inherited one, which a tmux server started from a
 /// shell with it set would otherwise pass on), then execs claude, so the
@@ -357,6 +375,25 @@ mod tests {
             Some("This folder pre-approves 10 tool permissions in .claude/settings.local.json: Bash(sudo mkdir:*), Bash(sudo cp:*), and 2 more These will apply without asking. Only proceed if you trust this configuration.")
         );
         assert!(trust_prompt("Welcome to Claude Code").is_none());
+    }
+
+    #[test]
+    fn a_host_suffix_is_added_once_in_parentheses() {
+        assert_eq!(
+            with_host_suffix("Deploy".into(), Some("xjopa1")),
+            "Deploy (xjopa1)"
+        );
+        assert_eq!(
+            with_host_suffix("Deploy ".into(), Some(" xjopa1 ")),
+            "Deploy (xjopa1)"
+        );
+        // Named that way already, by hand or when it was started.
+        assert_eq!(
+            with_host_suffix("Cleanup (xJOPA1)".into(), Some("xjopa1")),
+            "Cleanup (xJOPA1)"
+        );
+        assert_eq!(with_host_suffix("Deploy".into(), None), "Deploy");
+        assert_eq!(with_host_suffix("Deploy".into(), Some("  ")), "Deploy");
     }
 
     #[test]

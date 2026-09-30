@@ -137,6 +137,7 @@ pub fn run() {
             commands::remote_rename_host,
             commands::remote_remove_host,
             commands::remote_host_info,
+            commands::remote_set_host_settings,
             commands::remote_list_accounts,
             commands::remote_list_sessions,
             commands::remote_list_dirs,

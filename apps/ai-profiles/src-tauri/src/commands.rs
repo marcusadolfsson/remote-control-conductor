@@ -28,7 +28,7 @@ use crate::usage::{
     ProfileUsage,
 };
 use ai_profiles_core::api::{
-    DeletedAccount, DirListing, HostInfo, LaunchResult as RemoteLaunch, LoginStart,
+    DeletedAccount, DirListing, HostInfo, HostSettings, LaunchResult as RemoteLaunch, LoginStart,
     NewSessionRequest, RemoteAccount, RemoteSession, WindowKey, WindowScreen,
 };
 
@@ -281,6 +281,24 @@ pub async fn remote_remove_host(host_id: String) -> AppResult<()> {
 #[tauri::command]
 pub async fn remote_host_info(host_id: String) -> AppResult<HostInfo> {
     remote::info(&HostList::default_list()?, secrets::store(), &host_id).await
+}
+
+/// Put `remote_control_suffix` after the Remote Control names host
+/// `host_id` gives sessions from now on, in parentheses, or stop (`None`).
+#[tauri::command]
+pub async fn remote_set_host_settings(
+    host_id: String,
+    remote_control_suffix: Option<String>,
+) -> AppResult<HostSettings> {
+    remote::set_settings(
+        &HostList::default_list()?,
+        secrets::store(),
+        &host_id,
+        &HostSettings {
+            remote_control_suffix,
+        },
+    )
+    .await
 }
 
 #[tauri::command]

@@ -109,6 +109,20 @@ pub struct HostInfo {
     pub claude: Option<ClaudeInfo>,
     pub accounts_base: String,
     pub includes_default: bool,
+    /// What the server was set to do, from any app paired with it. `None`
+    /// from a server too old to have settings.
+    #[serde(default)]
+    pub settings: Option<HostSettings>,
+}
+
+/// A server's own settings, changed from the app (`PUT /v1/settings`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostSettings {
+    /// Put after every Remote Control name the server gives a session, in
+    /// parentheses: "Deploy (xjopa1)". `None` leaves names as they are.
+    #[serde(default)]
+    pub remote_control_suffix: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

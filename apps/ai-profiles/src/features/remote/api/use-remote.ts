@@ -29,6 +29,7 @@ import {
   remoteRestartSession,
   remoteRestoreSession,
   remoteResumeSession,
+  remoteSetHostSettings,
   remoteSetProfileColor,
   remoteStopSession,
   remoteTransferPlan,
@@ -96,6 +97,15 @@ export function usePairHost() {
   return useMutation({
     mutationFn: (input: { code: string; label?: string }) => remotePairHost(input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.remote.all }),
+  })
+}
+
+/** Change a host's own settings, then read its info again to show them. */
+export function useSetHostSettings(hostId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (remoteControlSuffix: string | null) => remoteSetHostSettings({ hostId, remoteControlSuffix }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.remote.info(hostId) }),
   })
 }
 
