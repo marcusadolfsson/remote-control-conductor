@@ -24,21 +24,7 @@ export function useAppState(): UseAppStateResult {
       await queryClient.cancelQueries({ queryKey: queryKeys.appState })
       const previous = queryClient.getQueryData<AppState>(queryKeys.appState)
       if (previous) {
-        const optimistic: AppState = {
-          ...previous,
-          welcomeShown: patch.welcomeShown ?? previous.welcomeShown,
-          migrationDismissedAt: patch.clearMigrationDismissed
-            ? null
-            : (patch.migrationDismissedAt ?? previous.migrationDismissedAt),
-          pathBannerDismissedAt: patch.clearPathBannerDismissed
-            ? null
-            : (patch.pathBannerDismissedAt ?? previous.pathBannerDismissedAt),
-          themeMode: patch.themeMode ?? previous.themeMode,
-          selectedEntryId: patch.clearSelectedEntryId ? null : (patch.selectedEntryId ?? previous.selectedEntryId),
-          dockIconAcknowledgedAt: patch.dockIconAcknowledgedAt ?? previous.dockIconAcknowledgedAt,
-          defaultProfileNames: withDefaultProfileName(previous.defaultProfileNames, patch.defaultProfileName),
-        }
-        queryClient.setQueryData(queryKeys.appState, optimistic)
+        queryClient.setQueryData(queryKeys.appState, computeOptimisticAppState(previous, patch))
       }
       return { previous }
     },
@@ -65,6 +51,29 @@ export function useAppState(): UseAppStateResult {
   }
 }
 
+/**
+ * Computes the optimistic `AppState` shown while a patch is in flight, by
+ * applying the patch's overrides (and "clear" flags) on top of the last
+ * known state. Pure so the mutation's `onMutate` stays a thin orchestrator.
+ */
+export function computeOptimisticAppState(previous: AppState, patch: AppStatePatch): AppState {
+  return {
+    ...previous,
+    welcomeShown: patch.welcomeShown ?? previous.welcomeShown,
+    migrationDismissedAt: patch.clearMigrationDismissed
+      ? null
+      : (patch.migrationDismissedAt ?? previous.migrationDismissedAt),
+    pathBannerDismissedAt: patch.clearPathBannerDismissed
+      ? null
+      : (patch.pathBannerDismissedAt ?? previous.pathBannerDismissedAt),
+    themeMode: patch.themeMode ?? previous.themeMode,
+    selectedEntryId: patch.clearSelectedEntryId ? null : (patch.selectedEntryId ?? previous.selectedEntryId),
+    dockIconAcknowledgedAt: patch.dockIconAcknowledgedAt ?? previous.dockIconAcknowledgedAt,
+    defaultProfileNames: withDefaultProfileName(previous.defaultProfileNames, patch.defaultProfileName),
+    dismissedRepairSessions: withDismissedRepair(previous.dismissedRepairSessions, patch.dismissedRepair),
+  }
+}
+
 /** Mirrors the Rust side: trims, and an empty name drops the custom name. */
 function withDefaultProfileName(
   names: AppState['defaultProfileNames'] | undefined,
@@ -79,6 +88,25 @@ function withDefaultProfileName(
     delete next[rename.app]
   } else {
     next[rename.app] = name
+  }
+  return next
+}
+
+/**
+ * Mirrors the Rust side: an empty list forgets the profile's dismissal.
+ */
+function withDismissedRepair(
+  dismissed: AppState['dismissedRepairSessions'] | undefined,
+  patch: AppStatePatch['dismissedRepair'],
+): AppState['dismissedRepairSessions'] {
+  const next = { ...(dismissed ?? {}) }
+  if (patch === undefined) {
+    return next
+  }
+  if (patch.sessionIds.length === 0) {
+    delete next[patch.profileId]
+  } else {
+    next[patch.profileId] = patch.sessionIds
   }
   return next
 }

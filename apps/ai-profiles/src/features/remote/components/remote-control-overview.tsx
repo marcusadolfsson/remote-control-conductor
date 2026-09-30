@@ -37,7 +37,7 @@ export function RemoteControlSidebarRow({ selected, onSelect }: { selected: bool
 }
 
 /** Pure: `sessions` by account, accounts in order of email, one without an email last. */
-export function byAccount(sessions: Array<RemoteControlSession>): Array<[string | null, Array<RemoteControlSession>]> {
+function byAccount(sessions: Array<RemoteControlSession>): Array<[string | null, Array<RemoteControlSession>]> {
   const groups = new Map<string | null, Array<RemoteControlSession>>()
   for (const connected of sessions) {
     const key = connected.email?.toLowerCase() ?? null

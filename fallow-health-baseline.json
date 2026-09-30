@@ -1,0 +1,102 @@
+{
+  "kind": "health",
+  "finding_counts": {
+    "apps/ai-profiles/src/app.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/app-shell/components/workspace.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/profiles/components/create-profile-dialog.tsx": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/profiles/components/profile-form-fields.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/profiles/components/project-memory.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/remote/components/launch-result-dialog.tsx": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/remote/components/move-remote-session-dialog.tsx": {
+      "complexity_critical": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/remote/components/new-remote-session-dialog.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/remote/components/remote-account-detail.tsx": {
+      "complexity_critical": {
+        "count": 5
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "apps/ai-profiles/src/features/remote/components/remote-window.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/remote/components/sign-in-dialog.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/remote/components/switch-account-dialog.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/settings/components/remote-hosts-section.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "apps/ai-profiles/src/features/settings/components/settings-view.test.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    }
+  },
+  "runtime_coverage_findings": [],
+  "target_keys": [
+    "apps/ai-profiles/src/app.tsx:complexity",
+    "apps/ai-profiles/src/features/remote/components/remote-account-detail.tsx:complexity",
+    "apps/ai-profiles/src/features/profiles/api/narrow-usage.ts:high impact",
+    "apps/ai-profiles/src/lib/extract-error-message.ts:high impact",
+    "apps/ai-profiles/src/features/remote/components/move-remote-session-dialog.tsx:complexity",
+    "apps/ai-profiles/src/features/remote/components/launch-result-dialog.tsx:complexity"
+  ]
+}

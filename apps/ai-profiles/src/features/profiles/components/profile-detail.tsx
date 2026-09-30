@@ -7,16 +7,17 @@ import { Suspense, useState } from 'react'
 import { PaneLayout } from '@/components/pane-layout'
 import { useDependencies } from '@/features/dependencies/api/use-dependencies'
 import { ProfileRemoteControl } from '@/features/remote/components/profile-remote-control'
+import { SessionsPanel } from '@/features/sessions/components/sessions-panel'
 import { appSpecs, wrapperCommand } from '@/lib/app-registry'
 
+import { useProfileAccount } from '../api/use-profile-account'
 import { useProfileLastUsed } from '../api/use-profile-last-used'
 import { useProfilePaths } from '../api/use-profile-paths'
-import { AccountPart } from './account-line'
+import { accountLabel, accountTitle } from './account-line'
 import { formatLastUsed } from './format-last-used'
 import { ProfileDetailHeader, ProfileSwatch } from './profile-detail-header'
 import { ProfileDetailInfo } from './profile-detail-info'
 import { ProfileDetailOverflowMenu, ProfileDetailOverflowMenuFallback } from './profile-detail-overflow-menu'
-import { ProfileDetailSessions } from './profile-detail-sessions'
 import { ProfileDetailSurfacesPanel } from './profile-detail-surfaces-panel'
 import { ProfileDetailUsageCard } from './profile-detail-usage-card'
 import { useGuiLaunch } from './use-gui-launch'
@@ -35,12 +36,15 @@ type Props = {
 export function ProfileDetail({ profile, shortcutsEnabled, onEdit, onDelete }: Props) {
   const [actionError, setActionError] = useState<string | null>(null)
   const command = wrapperCommand(profile.app, profile.slug)
+  const account = useProfileAccount(profile.id)
+  const signedInAs = accountLabel(account)
   // Above the boundary below, which swaps one surfaces panel for another as
   // soon as the paths land.
   const launch = useGuiLaunch()
 
   return (
     <PaneLayout
+      aside={<SessionsPanel key={profile.id} profileId={profile.id} app={profile.app} />}
       header={
         <ProfileDetailHeader
           name={profile.name}
@@ -49,7 +53,12 @@ export function ProfileDetail({ profile, shortcutsEnabled, onEdit, onDelete }: P
           subline={
             <>
               <span>{appSpecs[profile.app].displayName}</span>
-              <AccountPart profileId={profile.id} />
+              {signedInAs ? (
+                <>
+                  <span className="mx-2 text-border">·</span>
+                  <span title={accountTitle(account)}>{signedInAs}</span>
+                </>
+              ) : null}
               <span className="mx-2 text-border">·</span>
               <span className="text-muted-strong">{formatLastUsed(profile.lastUsedAt)}</span>
             </>
@@ -75,8 +84,10 @@ export function ProfileDetail({ profile, shortcutsEnabled, onEdit, onDelete }: P
 
       {/* Only the two row descriptions wait on per-profile data, so the
           fallback is the same panel with its description slots empty: the
-          controls stay live and nothing moves when the paths land. */}
-      <div className="mb-6">
+          controls stay live and nothing moves when the paths land. Stacked,
+          the sessions card follows 14px below, as the cards above space
+          themselves; beside it, this ends the column. */}
+      <div className="mb-3.5 pane-wide:mb-6">
         <Suspense
           key={profile.id}
           fallback={
@@ -97,7 +108,6 @@ export function ProfileDetail({ profile, shortcutsEnabled, onEdit, onDelete }: P
         </Suspense>
       </div>
 
-      {profile.app === 'claude' ? <ProfileDetailSessions key={profile.id} profileId={profile.id} /> : null}
       {profile.app === 'claude' ? <ProfileRemoteControl key={`rc-${profile.id}`} profileId={profile.id} /> : null}
 
       {actionError ? (

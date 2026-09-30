@@ -39,8 +39,8 @@ profile on this Mac is named by its name (\"Marcus1\"); an account on a host is 
 host/account (\"xjopa1/marcus1\"). A session is named by its id, an id prefix of 8+ characters, \
 or its exact title. To put a profile on another account (personal, work, a client's), \
 switch_account (then finish_sign_in) signs the whole profile in as it: nothing moves, its sessions resume. \
-Moves stay within this Mac or within one host. Before move_session, call plan_move: every memory \
-note both sides changed needs a decision.";
+Moves stay within this Mac or within one host. Before move_session, call plan_move: on a host, \
+every memory note both sides changed needs a decision; on this Mac the destination keeps its own.";
 
 #[derive(Clone)]
 pub struct AiProfiles {
@@ -196,10 +196,10 @@ pub struct MoveParams {
     pub session: String,
     /// Where it goes: another profile on this Mac, or another account on the same host.
     pub to: String,
-    /// One decision per memory note plan_move lists as a conflict, by its path: "source", "destination", "newer", or {"merged": "<text>"}.
+    /// On a host: one decision per memory note plan_move lists as a conflict, by its path: "source", "destination", "newer", or {"merged": "<text>"}.
     #[serde(default)]
     pub memory: HashMap<String, MemoryChoice>,
-    /// What happens to the copy left behind. Default archive.
+    /// What happens to the copy left behind. Default archive; on this Mac always archive.
     #[serde(default)]
     pub afterwards: Afterwards,
     /// On a host: resume the session under the destination account afterwards, with Remote Control on. Default true.
@@ -229,7 +229,7 @@ pub struct RestoreParams {
     pub profile: String,
     /// The archived session's id, an id prefix of 8+ characters, or its title.
     pub session: String,
-    /// Which archive of it, as list_sessions with archived=true shows it. The latest when left out.
+    /// On a host: which archive of it, as list_sessions with archived=true shows it. The latest when left out.
     pub archive: Option<String>,
     /// On this Mac: quit the Claude app that lists the session first. Default false.
     #[serde(default)]
@@ -435,7 +435,7 @@ impl AiProfiles {
     }
 
     #[tool(
-        description = "What moving a session to another profile would do: the files it copies or replaces, anything in the way, apps to quit, and the memory notes both sides changed (with both texts), each needing a decision in move_session.",
+        description = "What moving a session to another profile would do: the files it copies or replaces, anything in the way, and apps to quit. On a host also the memory notes both sides changed (with both texts), each needing a decision in move_session; on this Mac the destination keeps its own copy of those.",
         annotations(read_only_hint = true)
     )]
     async fn plan_move(
@@ -446,7 +446,7 @@ impl AiProfiles {
     }
 
     #[tool(
-        description = "Move a session to another profile on this Mac, or another account on the same host: transcript, subagents, file history and plans, with project memory merged. Anything replaced is backed up. Call plan_move first.",
+        description = "Move a session to another profile on this Mac, or another account on the same host: transcript, subagents, file history and plans, with project memory merged. Anything replaced is backed up, and the copy left behind is archived. Call plan_move first.",
         annotations(read_only_hint = false, destructive_hint = true)
     )]
     async fn move_session(
@@ -479,7 +479,7 @@ impl AiProfiles {
     }
 
     #[tool(
-        description = "Delete one archive of a session for good, freeing its space. Can't be undone.",
+        description = "Delete one archive of a session on a host for good, freeing its space. Can't be undone.",
         annotations(read_only_hint = false, destructive_hint = true)
     )]
     async fn delete_archive(
@@ -531,8 +531,7 @@ fn without_nulls(value: Value) -> Value {
 fn why(error: AppError) -> String {
     match error {
         AppError::Remote { code, message } => format!("{message} ({code})"),
-        AppError::Validation(message) | AppError::NotFound(message) => message,
-        other => other.to_string(),
+        other => other.message(),
     }
 }
 
@@ -668,16 +667,30 @@ async fn remote_session(
         .expect("the session just resolved"))
 }
 
-fn local_session_id(profile_id: &str, reference: &str) -> AppResult<String> {
-    let all = sessions::list(&sessions::home(profile_id)?)?;
+/// The sessions of profile `profile_id` on this Mac, active and archived.
+async fn local_sessions(profile_id: &str) -> Result<sessions::SessionList, String> {
+    sessions::list_sessions(sessions::home_for(profile_id).map_err(why)?)
+        .await
+        .map_err(why)
+}
+
+/// The id of the session `reference` names among profile `profile_id`'s
+/// archived sessions, or its active ones.
+async fn local_session_id(
+    profile_id: &str,
+    reference: &str,
+    archived: bool,
+) -> Result<String, String> {
+    let all = local_sessions(profile_id).await?.sessions;
     let names: Vec<SessionName> = all
         .iter()
+        .filter(|session| session.archived == archived)
         .map(|session| SessionName {
             id: &session.id,
             title: session.title.as_deref(),
         })
         .collect();
-    refs::session(reference, &names).map_err(AppError::Validation)
+    refs::session(reference, &names)
 }
 
 /// Pure: a host session, as the tools show it.
@@ -780,33 +793,26 @@ async fn get_usage(reference: &str) -> Outcome {
 
 async fn list_sessions(reference: &str, archived: bool) -> Outcome {
     match target(reference).await? {
-        Target::Local { id, .. } => {
-            blocking(move || {
-                let home = sessions::home(&id)?;
-                if archived {
-                    return Ok(serde_json::to_value(sessions::list_archived(&home))?);
-                }
-                Ok(Value::Array(
-                    sessions::list(&home)?
-                        .into_iter()
-                        .map(|session| {
-                            json!({
-                                "id": session.id,
-                                "title": session.title,
-                                "folder": session.cwd,
-                                "updated": session.updated_at,
-                                "running": session.running,
-                                "openInDesktop": session.open_in_desktop.then_some(true),
-                                "inDesktop": session.in_desktop,
-                                "unmovable": session.unmovable_reason,
-                                "sizeBytes": session.size_bytes,
-                            })
-                        })
-                        .collect(),
-                ))
-            })
-            .await
-        }
+        Target::Local { id, .. } => Ok(Value::Array(
+            local_sessions(&id)
+                .await?
+                .sessions
+                .into_iter()
+                .filter(|session| session.archived == archived)
+                .map(|session| {
+                    json!({
+                        "id": session.id,
+                        "title": session.title,
+                        "folder": session.cwd,
+                        "updated": session.last_used_at,
+                        "kind": session.kind,
+                        "state": session.state,
+                        "needsRepair": session.needs_repair.then_some(true),
+                        "unmovable": session.unmovable_reason,
+                    })
+                })
+                .collect(),
+        )),
         Target::Remote {
             host_id, account, ..
         } => {
@@ -1170,20 +1176,6 @@ async fn move_ends(profile: &str, to: &str) -> Result<MoveEnds, String> {
     }
 }
 
-fn local_request(from: &str, session_id: &str, to: &str) -> sessions::TransferRequest {
-    sessions::TransferRequest {
-        source_id: from.to_owned(),
-        session_id: session_id.to_owned(),
-        destination_id: to.to_owned(),
-        add_to_desktop: true,
-        archive_source: false,
-        delete_source: false,
-        replace_newer: false,
-        quit_apps: false,
-        memory: HashMap::new(),
-    }
-}
-
 async fn switch_account(reference: &str) -> Outcome {
     let (host_id, host_label, account) = remote_target(reference).await?;
     let list = host_list()?;
@@ -1234,16 +1226,12 @@ async fn finish_sign_in(params: FinishSignInParams) -> Outcome {
 async fn plan_move(params: PlanMoveParams) -> Outcome {
     match move_ends(&params.profile, &params.to).await? {
         MoveEnds::Local { from, to } => {
-            let session = params.session;
-            blocking(move || {
-                let session_id = local_session_id(&from, &session)?;
-                Ok(serde_json::to_value(sessions::plan(&local_request(
-                    &from,
-                    &session_id,
-                    &to,
-                ))?)?)
-            })
-            .await
+            let session_id = local_session_id(&from, &params.session, false).await?;
+            to_json(
+                sessions::actions::plan_move(&from, &session_id, &to)
+                    .await
+                    .map_err(why)?,
+            )
         }
         MoveEnds::Remote { host_id, from, to } => {
             let found = remote_session(&host_id, &from, &params.session).await?;
@@ -1268,31 +1256,34 @@ async fn move_session(params: MoveParams) -> Outcome {
     let delete_source = params.afterwards == Afterwards::Delete;
     match move_ends(&params.profile, &params.to).await? {
         MoveEnds::Local { from, to } => {
-            let MoveParams {
-                session,
-                memory,
-                quit_apps,
-                replace_newer,
-                ..
-            } = params;
-            blocking(move || {
-                let session_id = local_session_id(&from, &session)?;
-                let mut request = local_request(&from, &session_id, &to);
-                let plan = sessions::plan(&request)?;
-                if !plan.blockers.is_empty() {
-                    return Err(AppError::Validation(plan.blockers.join(" ")));
-                }
-                request.memory = decisions(&plan.memory, &memory).map_err(AppError::Validation)?;
-                request.archive_source = archive_source;
-                request.delete_source = delete_source;
-                request.quit_apps = quit_apps;
-                request.replace_newer = replace_newer;
-                Ok(serde_json::to_value(sessions::transfer(
-                    &request,
-                    &|_| {},
-                )?)?)
-            })
-            .await
+            // A move on this Mac copies the session, then archives it at the
+            // source, so Restore undoes it.
+            if params.afterwards != Afterwards::Archive {
+                return Err("On this Mac a move always archives the session it leaves behind, so it can be restored.".to_owned());
+            }
+            let session_id = local_session_id(&from, &params.session, false).await?;
+            let plan = sessions::actions::plan_move(&from, &session_id, &to)
+                .await
+                .map_err(why)?;
+            if !plan.blockers.is_empty() {
+                return Err(plan.blockers.join(" "));
+            }
+            if plan.destination_newer && !params.replace_newer {
+                return Err(format!(
+                    "{to}'s copy of this session is newer than {from}'s: moving would roll it back there. Pass replace_newer to go ahead anyway."
+                ));
+            }
+            to_json(
+                sessions::actions::move_session(
+                    &from,
+                    &session_id,
+                    &to,
+                    params.replace_newer,
+                    params.quit_apps,
+                )
+                .await
+                .map_err(why)?,
+            )
         }
         MoveEnds::Remote { host_id, from, to } => {
             let found = remote_session(&host_id, &from, &params.session).await?;
@@ -1338,16 +1329,11 @@ async fn move_session(params: MoveParams) -> Outcome {
 async fn archive_session(params: ArchiveParams) -> Outcome {
     match target(&params.profile).await? {
         Target::Local { id, .. } => {
-            let (session, quit_app) = (params.session, params.quit_app);
-            blocking(move || {
-                let session_id = local_session_id(&id, &session)?;
-                Ok(serde_json::to_value(sessions::archive(
-                    &id,
-                    &session_id,
-                    quit_app,
-                )?)?)
-            })
-            .await
+            let session_id = local_session_id(&id, &params.session, false).await?;
+            sessions::actions::archive(&id, &session_id, params.quit_app)
+                .await
+                .map_err(why)?;
+            Ok(json!({ "archived": session_id }))
         }
         Target::Remote {
             host_id, account, ..
@@ -1419,98 +1405,75 @@ fn pick_archive(
     Ok((id, chosen.to_owned()))
 }
 
-async fn archived_of(target: &Target) -> Result<Vec<Archived>, String> {
-    match target {
-        Target::Local { id, .. } => {
-            let id = id.clone();
-            blocking(move || {
-                Ok(sessions::list_archived(&sessions::home(&id)?)
-                    .into_iter()
-                    .map(|found| Archived {
-                        id: found.id,
-                        title: found.title,
-                        archive: found.archive,
-                    })
-                    .collect())
-            })
+/// A host account's archived sessions, each archive of each.
+async fn host_archives(host_id: &str, account: &str) -> Result<Vec<Archived>, String> {
+    Ok(
+        remote::archived(&host_list()?, secrets::store(), host_id, account)
             .await
-        }
-        Target::Remote {
-            host_id, account, ..
-        } => Ok(
-            remote::archived(&host_list()?, secrets::store(), host_id, account)
-                .await
-                .map_err(why)?
-                .into_iter()
-                .map(|found| Archived {
-                    id: found.id,
-                    title: found.title,
-                    archive: found.archive,
-                })
-                .collect(),
-        ),
-    }
+            .map_err(why)?
+            .into_iter()
+            .map(|found| Archived {
+                id: found.id,
+                title: found.title,
+                archive: found.archive,
+            })
+            .collect(),
+    )
 }
 
 async fn restore_session(params: RestoreParams) -> Outcome {
-    let target = target(&params.profile).await?;
-    let all = archived_of(&target).await?;
-    let (session_id, archive) = pick_archive(&all, &params.session, params.archive.as_deref())?;
-    match target {
+    match target(&params.profile).await? {
+        // A session on this Mac has one archive: the session itself.
         Target::Local { id, .. } => {
-            let quit_app = params.quit_app;
-            blocking(move || {
-                Ok(serde_json::to_value(sessions::restore(
-                    &id,
-                    &session_id,
-                    &archive,
-                    quit_app,
-                )?)?)
-            })
-            .await
+            let session_id = local_session_id(&id, &params.session, true).await?;
+            sessions::actions::restore(&id, &session_id, params.quit_app)
+                .await
+                .map_err(why)?;
+            Ok(json!({ "restored": session_id }))
         }
         Target::Remote {
             host_id, account, ..
-        } => to_json(
-            remote::restore(
-                &host_list()?,
-                secrets::store(),
-                &host_id,
-                &account,
-                &session_id,
-                &archive,
+        } => {
+            let all = host_archives(&host_id, &account).await?;
+            let (session_id, archive) =
+                pick_archive(&all, &params.session, params.archive.as_deref())?;
+            to_json(
+                remote::restore(
+                    &host_list()?,
+                    secrets::store(),
+                    &host_id,
+                    &account,
+                    &session_id,
+                    &archive,
+                )
+                .await
+                .map_err(why)?,
             )
-            .await
-            .map_err(why)?,
-        ),
+        }
     }
 }
 
 async fn delete_archive(params: DeleteArchiveParams) -> Outcome {
-    let target = target(&params.profile).await?;
-    let all = archived_of(&target).await?;
+    let Target::Remote {
+        host_id, account, ..
+    } = target(&params.profile).await?
+    else {
+        return Err("Deleting an archive is only on hosts: on this Mac, an archived session stays until it's restored.".to_owned());
+    };
+    let all = host_archives(&host_id, &account).await?;
     let (session_id, archive) = pick_archive(&all, &params.session, Some(&params.archive))?;
-    match target {
-        Target::Local { id, .. } => {
-            let freed =
-                blocking(move || sessions::delete_archived(&id, &session_id, &archive)).await?;
-            Ok(json!({ "freedBytes": freed }))
-        }
-        Target::Remote {
-            host_id, account, ..
-        } => to_json(
-            remote::delete_archive(
-                &host_list()?,
-                secrets::store(),
-                &host_id,
-                &account,
-                &session_id,
-                &archive,
-            )
-            .await
-            .map_err(why)?,
-        ),
-    }
+    to_json(
+        remote::delete_archive(
+            &host_list()?,
+            secrets::store(),
+            &host_id,
+            &account,
+            &session_id,
+            &archive,
+        )
+        .await
+        .map_err(why)?,
+    )
 }
 
 #[cfg(test)]

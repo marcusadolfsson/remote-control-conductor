@@ -297,7 +297,7 @@ function ProfileMenu({
 }
 
 /** How long a sign-in has left, in words: "27 days left", "5 hours left". */
-export function signInLeft(until: string | null, now: number = Date.now()): string | null {
+function signInLeft(until: string | null, now: number = Date.now()): string | null {
   if (until === null) {
     return null
   }

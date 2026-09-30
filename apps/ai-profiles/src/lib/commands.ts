@@ -1,12 +1,10 @@
 import type { AppId } from './app-registry'
 import type {
   AccountStatus,
+  ActionCheck,
   AppMetadata,
   AppState,
   AppStatePatch,
-  ArchiveCheck,
-  ArchivedSession,
-  ArchiveReport,
   DeletedAccount,
   Dependencies,
   DirListing,
@@ -19,6 +17,8 @@ import type {
   McpCommand,
   McpInstalled,
   MigrationBackupInfo,
+  MovePlan,
+  MoveReport,
   NewRemoteSession,
   PairingPreview,
   PathHookOutcome,
@@ -36,15 +36,12 @@ import type {
   RemoteTransferPlan,
   RemoteTransferReport,
   RemoteTransferRequest,
-  RestoreCheck,
-  RestoreReport,
-  SessionSummary,
+  RepairReport,
+  SessionAction,
+  SessionList,
   Shell,
   Surface,
   Surfaces,
-  TransferPlan,
-  TransferReport,
-  TransferRequest,
   WindowKey,
   WindowScreen,
 } from './types'
@@ -167,67 +164,6 @@ export function openCliLogin(id: string): Promise<void> {
 
 export function getProfileUsage(profileId: string): Promise<ProfileUsage> {
   return invoke<ProfileUsage>('get_profile_usage', { profileId })
-}
-
-export function listSessions(id: string): Promise<Array<SessionSummary>> {
-  return invoke<Array<SessionSummary>>('list_sessions', { id })
-}
-
-export function planSessionTransfer(request: TransferRequest): Promise<TransferPlan> {
-  return invoke<TransferPlan>('plan_session_transfer', { request })
-}
-
-/** Claude's merge of memory note `path`, which the move needs decided. */
-export function mergeTransferMemory(request: TransferRequest, path: string): Promise<string> {
-  return invoke<string>('merge_transfer_memory', { request, path })
-}
-
-export function transferSession(request: TransferRequest): Promise<TransferReport> {
-  return invoke<TransferReport>('transfer_session', { request })
-}
-
-export function checkSessionArchive(input: { profileId: string; sessionId: string }): Promise<ArchiveCheck> {
-  return invoke<ArchiveCheck>('check_session_archive', input)
-}
-
-export function archiveSession(input: {
-  profileId: string
-  sessionId: string
-  /** Quit the profile's desktop app first when it has to. */
-  quitApp: boolean
-}): Promise<ArchiveReport> {
-  return invoke<ArchiveReport>('archive_session', input)
-}
-
-export function listArchivedSessions(id: string): Promise<Array<ArchivedSession>> {
-  return invoke<Array<ArchivedSession>>('list_archived_sessions', { id })
-}
-
-export function checkSessionRestore(input: {
-  profileId: string
-  sessionId: string
-  archive: string
-}): Promise<RestoreCheck> {
-  return invoke<RestoreCheck>('check_session_restore', input)
-}
-
-/** Delete an archived session for good. Resolves to what it freed, in bytes. */
-export function deleteArchivedSession(input: {
-  profileId: string
-  sessionId: string
-  archive: string
-}): Promise<number> {
-  return invoke<number>('delete_archived_session', input)
-}
-
-export function restoreSession(input: {
-  profileId: string
-  sessionId: string
-  archive: string
-  /** Quit the profile's desktop app first when it has to. */
-  quitApp: boolean
-}): Promise<RestoreReport> {
-  return invoke<RestoreReport>('restore_session', input)
 }
 
 export function remoteListHosts(): Promise<Array<RemoteHost>> {
@@ -483,4 +419,74 @@ export function mcpServerCommand(): Promise<McpCommand> {
 
 export function mcpInstall(): Promise<Array<McpInstalled>> {
   return invoke<Array<McpInstalled>>('mcp_install')
+}
+
+/**
+ * The sessions profile `profileId` (or `default:<app>`) owns, active and archived.
+ */
+export function listSessions(profileId: string): Promise<SessionList> {
+  return invoke<SessionList>('list_sessions', { profileId })
+}
+
+/**
+ * What stands between session `sessionId` of profile `profileId` and `action`:
+ * a reason only the user can clear, or the desktop app that has to quit first.
+ */
+export function checkSessionAction(profileId: string, sessionId: string, action: SessionAction): Promise<ActionCheck> {
+  return invoke<ActionCheck>('check_session_action', { profileId, sessionId, action })
+}
+
+/**
+ * Archives session `sessionId` of profile `profileId`, quitting the desktop app
+ * in the way first when `quitApp`.
+ */
+export function archiveSession(profileId: string, sessionId: string, quitApp: boolean): Promise<void> {
+  return invoke('archive_session', { profileId, sessionId, quitApp })
+}
+
+/**
+ * Restores archived session `sessionId` of profile `profileId`, quitting the
+ * desktop app in the way first when `quitApp`.
+ */
+export function restoreSession(profileId: string, sessionId: string, quitApp: boolean): Promise<void> {
+  return invoke('restore_session', { profileId, sessionId, quitApp })
+}
+
+/**
+ * What moving session `sessionId` of profile `profileId` to profile
+ * `destinationId` would do, without doing any of it.
+ */
+export function planSessionMove(profileId: string, sessionId: string, destinationId: string): Promise<MovePlan> {
+  return invoke<MovePlan>('plan_session_move', { profileId, sessionId, destinationId })
+}
+
+/**
+ * Moves session `sessionId` of profile `profileId` to profile `destinationId`:
+ * copies it there, then archives it here. A newer copy there is only replaced
+ * if `replaceNewer`; the desktop apps in the way are quit first if `quitApps`.
+ */
+export function moveSession(
+  profileId: string,
+  sessionId: string,
+  destinationId: string,
+  replaceNewer: boolean,
+  quitApps: boolean,
+): Promise<MoveReport> {
+  return invoke<MoveReport>('move_session', { profileId, sessionId, destinationId, replaceNewer, quitApps })
+}
+
+/**
+ * What stands between the sessions of profile `profileId` that need repair and
+ * their repair: the profile's desktop app, when it runs.
+ */
+export function checkSessionRepair(profileId: string): Promise<ActionCheck> {
+  return invoke<ActionCheck>('check_session_repair', { profileId })
+}
+
+/**
+ * Repairs the sessions profile `profileId`'s desktop app started before the
+ * profile had its own folder, quitting that app first if `quitApp`.
+ */
+export function repairSessions(profileId: string, quitApp: boolean): Promise<RepairReport> {
+  return invoke<RepairReport>('repair_sessions', { profileId, quitApp })
 }

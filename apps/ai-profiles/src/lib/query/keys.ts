@@ -1,3 +1,5 @@
+import type { SessionAction } from '@/lib/types'
+
 /**
  * Typed query-key factory.
  *
@@ -17,19 +19,6 @@ export const queryKeys = {
   // (which fires on reorder/delete/migration) doesn't refetch every
   // visible profile's quota in parallel and trip the rate limiter.
   profileUsage: (id: string) => ['profile-usage', id] as const,
-  // A profile's Claude sessions, and the plan for moving one. Outside the
-  // `profiles` subtree for the same reason as usage: reading every transcript
-  // is not something a reorder should set off.
-  sessions: {
-    all: ['sessions'] as const,
-    list: (id: string) => ['sessions', id] as const,
-    archived: (id: string) => ['sessions', id, 'archived'] as const,
-    transferPlan: (request: object) => ['sessions', 'transfer-plan', request] as const,
-    archiveCheck: (profileId: string, sessionId: string) =>
-      ['sessions', 'archive-check', profileId, sessionId] as const,
-    restoreCheck: (profileId: string, sessionId: string, archive: string) =>
-      ['sessions', 'restore-check', profileId, sessionId, archive] as const,
-  },
   // Remote hosts and what they report. Never persisted (the provider only
   // dehydrates usage), and outside `profiles` so a local reorder doesn't
   // refetch a machine across the network.
@@ -54,6 +43,23 @@ export const queryKeys = {
     sizes: ['migration', 'sizes'] as const,
     backups: ['migration', 'backups'] as const,
   },
+  // Outside the `profiles` subtree: moving a session changes two profiles'
+  // lists at once, so every mutation invalidates the whole `sessions` prefix.
+  sessions: {
+    all: ['sessions'] as const,
+    list: (profileId: string) => ['sessions', profileId] as const,
+  },
+  // Outside the `sessions` subtree: the lists refetching after an action must
+  // not refetch the check of the action that was just done.
+  sessionActionCheck: (profileId: string, sessionId: string, action: SessionAction) =>
+    ['session-action-check', profileId, sessionId, action] as const,
+  // Outside the `sessions` subtree for the same reason: the plan of a move
+  // that was just done must not refetch and flash what it would do now.
+  sessionMovePlan: (profileId: string, sessionId: string, destinationId: string) =>
+    ['session-move-plan', profileId, sessionId, destinationId] as const,
+  // Outside the `sessions` subtree for the same reason: a repair that was
+  // just done must not refetch its check.
+  sessionRepairCheck: (profileId: string) => ['session-repair-check', profileId] as const,
   appState: ['app-state'] as const,
   shell: ['shell'] as const,
 } as const

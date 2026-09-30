@@ -21,12 +21,21 @@ import { renderWithQuery } from '@/test/render-with-query'
 import { DeleteProfileDialog } from './delete-profile-dialog'
 import { ProfileDetail } from './profile-detail'
 
+// The sessions panel lists the profiles a session can move to, which these
+// tests don't set up.
+vi.mock('@/features/profiles/api/use-sidebar-entries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/profiles/api/use-sidebar-entries')>()),
+  useSidebarEntries: vi.fn(() => []),
+}))
+
 vi.mock('@/lib/commands', async () => {
   const actual = await vi.importActual<typeof import('@/lib/commands')>('@/lib/commands')
   return {
     ...actual,
+    listSessions: vi.fn(async () => ({ sessions: [], repairCount: 0 })),
     profilePaths: vi.fn(),
-    listSessions: vi.fn(async () => []),
+    // Unanswered unless a test answers it: the account line isn't what most
+    // tests here are about, and its answer re-renders the pane mid-click.
     profileAccount: vi.fn(() => new Promise(() => {})),
     openInFinder: vi.fn(async () => {}),
     openProfileInApp: vi.fn(async () => {}),

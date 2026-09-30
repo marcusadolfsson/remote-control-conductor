@@ -4,9 +4,11 @@ mod accounts;
 mod app_kind;
 mod app_state;
 pub mod cli;
+mod codex_rpc;
 mod commands;
 mod deps;
 mod error;
+mod inherited_env;
 mod launch;
 mod launchers;
 pub mod mcp;
@@ -59,10 +61,6 @@ pub fn run() {
                             eprintln!("remote-control-conductor: left the launcher of profile {id}: {err}")
                         }
                     }
-                }
-                // Archives made before archives were compressed.
-                for line in sessions::compress_old_archives() {
-                    eprintln!("remote-control-conductor: {line}");
                 }
             });
 
@@ -184,15 +182,13 @@ pub fn run() {
             commands::open_external_url,
             commands::open_cli_login,
             commands::list_sessions,
-            commands::plan_session_transfer,
-            commands::merge_transfer_memory,
-            commands::transfer_session,
-            commands::check_session_archive,
+            commands::check_session_action,
             commands::archive_session,
-            commands::list_archived_sessions,
-            commands::check_session_restore,
             commands::restore_session,
-            commands::delete_archived_session,
+            commands::plan_session_move,
+            commands::move_session,
+            commands::check_session_repair,
+            commands::repair_sessions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,284 +1,56 @@
-//! Claude Code sessions kept by a profile, and moving one to another profile.
+//! Local coding sessions kept by each profile: Claude Code's and Codex's.
 //!
-//! A session lives in two places. The CLI half is Claude Code's own: a
-//! transcript at `<config>/projects/<encoded cwd>/<id>.jsonl` plus a handful of
-//! per-session folders beside it. The desktop half is the Code tab's record of
-//! it, `<gui-data>/claude-code-sessions/<account>/<org>/local_<uuid>.json`, which
-//! points at the transcript by `cliSessionId`. A record whose transcript the app
-//! cannot find is not dropped: the app quietly starts a new, empty CLI session
-//! under it. So the two halves are always written together, and only while the
-//! app that owns them is closed.
-//!
-//! Everything here reads Claude Code and Claude desktop internals, which can
-//! change between versions.
+//! A [`Home`] is one place sessions live, a managed profile or an app's stock
+//! install ("Default"). The per-app submodules read the sessions a home holds
+//! from the apps' own files, which are undocumented internals that can change
+//! between versions, so everything here reads leniently and skips what it
+//! cannot make sense of rather than failing the whole listing.
 
-mod archive;
-mod desktop;
-mod restore;
-mod scan;
-mod transfer;
+pub mod actions;
+mod claude;
+mod codex;
+mod fs_ops;
+mod home;
+mod instance;
+mod list;
+mod move_plan;
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use ai_profiles_core::registry::read_registry;
-use serde::Serialize;
+use crate::app_kind::AppKind;
 
-use crate::app_kind::{spec, AppKind};
-use crate::error::{AppError, AppResult};
-use crate::paths::resolve_gui_app;
-use crate::profiles;
+pub use actions::{ActionCheck, SessionAction};
+pub use claude::repair::RepairReport;
+pub use home::home_for;
+pub use list::{list_sessions, SessionList};
+pub use move_plan::{MovePlan, MoveReport};
 
-pub use archive::{archive, check_archive, ArchiveCheck, ArchiveReport};
-pub use restore::{
-    check_restore, compress_old_archives, delete_archived, list_archived, restore, ArchivedSession,
-    RestoreCheck, RestoreReport,
-};
-pub use scan::{list, SessionSummary};
-pub use transfer::{
-    merge_with_claude, plan, transfer, TransferPlan, TransferReport, TransferRequest,
-};
-
-/// Where one profile (or the stock install) keeps its sessions.
-#[derive(Debug, Clone)]
+/// Where one profile, or one app's stock install, keeps its sessions.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Home {
-    /// The profile's id, or `default:claude`.
+    /// The profile's id, or `default:<app>` for the stock install.
     pub id: String,
-    /// The profile's name, or "Default" for the stock install.
+    /// The app whose sessions live here.
+    pub app: AppKind,
+    /// The profile's name, or the stock install's display name (the one the
+    /// user gave it, else "Default").
     pub label: String,
-    /// `CLAUDE_CONFIG_DIR` of the profile: the CLI half of every session.
+    /// The CLI's config dir: `CLAUDE_CONFIG_DIR` for Claude, `CODEX_HOME` for
+    /// Codex. The CLI half of every session lives here.
     pub config_dir: PathBuf,
-    /// The desktop app's data dir: the Code tab's session records.
+    /// The desktop app's `--user-data-dir`, or its stock Application Support
+    /// dir for the stock install.
     pub gui_data_dir: PathBuf,
     /// The stock install rather than a managed profile.
     pub stock: bool,
-    /// Whether the profile has a desktop app to add sessions to.
-    pub desktop: bool,
+    /// Whether the home's desktop app reads its sessions from `config_dir`.
+    /// False for a profile whose launcher was built before launchers set the
+    /// config home: its desktop app still reads the stock one.
+    pub desktop_reads_config_dir: bool,
 }
 
-impl Home {
-    /// The `.claude.json` the CLI writes its account to. A stock install keeps it
-    /// in `$HOME` rather than in the config dir.
-    fn claude_json_candidates(&self) -> Vec<PathBuf> {
-        let mut candidates = vec![self.config_dir.join(".claude.json")];
-        if self.stock {
-            if let Some(home) = dirs::home_dir() {
-                candidates.push(home.join(".claude.json"));
-            }
-        }
-        candidates
-    }
-}
-
-/// Resolve the session home of profile `id` (or `default:claude`). Only Claude
-/// profiles have sessions this module understands.
-pub fn home(id: &str) -> AppResult<Home> {
-    let paths = profiles::paths(id)?;
-    let (label, stock, desktop) = match AppKind::from_default_id(id) {
-        Some(kind) => {
-            ensure_claude(kind)?;
-            (
-                // The name the user gave the stock entry, as the sidebar shows it.
-                crate::app_state::load()
-                    .ok()
-                    .and_then(|state| state.default_profile_names.get(&kind).cloned())
-                    .unwrap_or_else(|| "Default".to_string()),
-                true,
-                resolve_gui_app(spec(kind)).is_some(),
-            )
-        }
-        None => {
-            let profile = profiles::load()?
-                .into_iter()
-                .find(|candidate| candidate.id == id)
-                .ok_or_else(|| AppError::NotFound(format!("profile {id} not found")))?;
-            ensure_claude(profile.app)?;
-            (profile.name, false, profile.surfaces.gui)
-        }
-    };
-    Ok(Home {
-        id: id.to_string(),
-        label,
-        config_dir: PathBuf::from(paths.cli_config_dir),
-        gui_data_dir: PathBuf::from(paths.gui_data_dir),
-        stock,
-        desktop,
-    })
-}
-
-fn ensure_claude(kind: AppKind) -> AppResult<()> {
-    if kind == AppKind::Claude {
-        Ok(())
-    } else {
-        Err(AppError::Validation(
-            "sessions can only be listed and moved for Claude profiles".to_string(),
-        ))
-    }
-}
-
-/// Running processes, pid to command line, from `ps -ax -o pid=,command=`.
-pub(crate) fn parse_process_list(ps_output: &str) -> HashMap<i32, String> {
-    ps_output
-        .lines()
-        .filter_map(|line| {
-            let (pid, command) = line.trim_start().split_once(char::is_whitespace)?;
-            Some((pid.parse().ok()?, command.trim().to_string()))
-        })
-        .collect()
-}
-
-/// A session a live `claude` process has open.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RunningSession {
-    pub session_id: String,
-    /// The process belongs to the desktop app, which keeps one running for
-    /// every Code tab session it has opened, idle or not, until it quits.
-    pub desktop: bool,
-}
-
-/// Sessions that a live `claude` process of `config_dir` has open, from the
-/// `sessions/<pid>.json` files it keeps there. A file whose pid is gone, or now
-/// belongs to something that is not Claude, is stale and ignored.
-pub(crate) fn running_sessions(
-    config_dir: &Path,
-    processes: &HashMap<i32, String>,
-) -> Vec<RunningSession> {
-    read_registry(config_dir)
-        .into_iter()
-        .filter_map(|(_, entry)| {
-            let command = processes.get(&entry.pid)?;
-            if !command.to_lowercase().contains("claude") {
-                return None;
-            }
-            Some(RunningSession {
-                desktop: entry.entrypoint.as_deref() == Some("claude-desktop"),
-                session_id: entry.session_id?,
-            })
-        })
-        .collect()
-}
-
-/// What has session `id` of `home` open, if anything does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OpenIn {
-    /// The desktop app, which lets go of it when it quits.
-    Desktop,
-    /// A `claude` in a terminal, which only the user can close.
-    Terminal,
-}
-
-pub(crate) fn open_in(home: &Home, id: &str, processes: &HashMap<i32, String>) -> Option<OpenIn> {
-    let open = running_sessions(&home.config_dir, processes);
-    let running = open.iter().find(|running| running.session_id == id)?;
-    Some(if running.desktop {
-        OpenIn::Desktop
-    } else {
-        OpenIn::Terminal
-    })
-}
-
-/// Why a session open in a terminal under `home` can't be moved or archived.
-pub(crate) fn terminal_blocker(home: &Home) -> String {
-    format!(
-        "The session is open in a terminal under {}. Close it first.",
-        home.label
-    )
-}
-
-/// A profile's desktop app that has to quit before a move or archive can go
-/// ahead, because it holds the session open or keeps the list it's in.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AppToQuit {
-    pub profile_id: String,
-    pub label: String,
-}
-
-impl AppToQuit {
-    pub(crate) fn of(home: &Home) -> Self {
-        AppToQuit {
-            profile_id: home.id.clone(),
-            label: home.label.clone(),
-        }
-    }
-}
-
-/// Add `home`'s app to `apps`, once.
-pub(crate) fn push_app(apps: &mut Vec<AppToQuit>, home: &Home) {
-    let app = AppToQuit::of(home);
-    if !apps.contains(&app) {
-        apps.push(app);
-    }
-}
-
-/// Quit each app in `apps`, the way ⌘Q would, and wait for it to go.
-pub(crate) fn quit_apps(apps: &[AppToQuit]) -> AppResult<()> {
-    for app in apps {
-        desktop::quit_app(&home(&app.profile_id)?)?;
-    }
-    Ok(())
-}
-
-/// The refusal for apps that are still running.
-pub(crate) fn apps_blocker(apps: &[AppToQuit]) -> AppError {
-    let names: Vec<String> = apps
-        .iter()
-        .map(|app| format!("Claude ({})", app.label))
-        .collect();
-    AppError::Validation(format!("Quit {} first.", names.join(" and ")))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn parses_ps_output_into_pid_and_command() {
-        let processes = parse_process_list("  12 /bin/zsh -l\n  345 claude --resume x\n garbage\n");
-        assert_eq!(processes.get(&12).map(String::as_str), Some("/bin/zsh -l"));
-        assert_eq!(
-            processes.get(&345).map(String::as_str),
-            Some("claude --resume x")
-        );
-        assert_eq!(processes.len(), 2);
-    }
-
-    #[test]
-    fn running_sessions_ignore_stale_and_foreign_pids() {
-        let dir = tempfile::tempdir().unwrap();
-        let sessions = dir.path().join("sessions");
-        fs::create_dir_all(&sessions).unwrap();
-        fs::write(sessions.join("10.json"), r#"{"pid":10,"sessionId":"live"}"#).unwrap();
-        fs::write(
-            sessions.join("13.json"),
-            r#"{"pid":13,"sessionId":"in-app","entrypoint":"claude-desktop"}"#,
-        )
-        .unwrap();
-        fs::write(
-            sessions.join("11.json"),
-            r#"{"pid":11,"sessionId":"reused-pid"}"#,
-        )
-        .unwrap();
-        fs::write(sessions.join("12.json"), r#"{"pid":12,"sessionId":"gone"}"#).unwrap();
-        fs::write(sessions.join("10.abc.key"), "not json").unwrap();
-        let processes = parse_process_list(
-            "10 /Users/x/.local/bin/claude\n11 /bin/zsh\n13 /p/gui-data/claude-code/2.1/claude.app/Contents/MacOS/claude\n",
-        );
-        let mut running = running_sessions(dir.path(), &processes);
-        running.sort_by(|a, b| a.session_id.cmp(&b.session_id));
-        assert_eq!(
-            running,
-            vec![
-                RunningSession {
-                    session_id: "in-app".to_string(),
-                    desktop: true
-                },
-                RunningSession {
-                    session_id: "live".to_string(),
-                    desktop: false
-                },
-            ]
-        );
-    }
+/// `value` unless it is blank. The apps write empty strings for fields they
+/// have no value for yet.
+fn non_blank(value: Option<String>) -> Option<String> {
+    value.filter(|text| !text.trim().is_empty())
 }

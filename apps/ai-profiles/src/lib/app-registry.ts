@@ -182,7 +182,7 @@ export const appIds: ReadonlyArray<AppId> = ['claude', 'codex']
  * Claude; the support underneath stays, and existing ChatGPT profiles keep
  * their files and launchers.
  */
-export const SHOW_CHATGPT = false
+const SHOW_CHATGPT = false
 
 /** The apps the app offers and lists, in `appIds` order. */
 export const shownAppIds: ReadonlyArray<AppId> = appIds.filter((id) => id !== 'codex' || SHOW_CHATGPT)

@@ -2,14 +2,22 @@ import type { AppId, Dependencies, RemoteHost, Surfaces } from '@/lib/types'
 
 import { useState } from 'react'
 
-import { Button, Dialog, Kbd, useToast } from '@/design'
+import { Dialog, useToast } from '@/design'
 // cross-feature: a remote profile's name has to be free on its server
 import { useRemoteAccounts } from '@/features/remote/api/use-remote'
-import { appSpecs, shownAppIds } from '@/lib/app-registry'
 import { isValidHexColor, presetColors } from '@/lib/colors'
 import { extractErrorMessage } from '@/lib/extract-error-message'
 
+import {
+  availableSurfaces,
+  effectiveSurfaces,
+  installedAppIds,
+  isProfileFormValid,
+  newProfileDockIcon,
+  preselectedApp,
+} from '../lib/profile-form'
 import { DockIconConsentDialog } from './dock-icon-consent-dialog'
+import { ProfileDialogFoot } from './profile-dialog-foot'
 import { isValidRemoteProfileName, ProfileFormFields, type ProfileType, remoteType } from './profile-form-fields'
 import { useDockIconConsent } from './use-dock-icon-consent'
 
@@ -61,33 +69,27 @@ export function CreateProfileDialog({
   // when they change the app.
   const [dockIconChoice, setDockIconChoice] = useState<boolean | null>(null)
 
-  const installedApps = shownAppIds.filter(
-    (id) => dependencies.apps[id].guiInstalled || dependencies.apps[id].cliInstalled,
-  )
-  // Pre-select when exactly one app is installed; otherwise leave empty so the
-  // user makes a deliberate choice.
-  const defaultApp: ProfileType =
-    initialRemoteHostId !== undefined ? remoteType : installedApps.length === 1 ? installedApps[0] : ''
+  const installedApps = installedAppIds(dependencies)
+  const defaultApp: ProfileType = initialRemoteHostId !== undefined ? remoteType : preselectedApp(installedApps)
   const [app, setApp] = useState<ProfileType>(defaultApp)
   const [hostId, setHostId] = useState<string>(initialRemoteHostId ?? remoteHosts[0]?.id ?? '')
   const remote = app === remoteType
+  // The app on this Mac, or none for a profile on a server.
+  const localApp = remote ? '' : app
   // Names on the chosen server, to say before creating that one is taken.
   const serverProfiles = useRemoteAccounts(hostId, remote && hostId !== '')
   const takenOnServer =
     remote && (serverProfiles.data ?? []).some((account) => account.name.toLowerCase() === name.trim().toLowerCase())
 
-  const appDeps = app !== '' && !remote ? dependencies.apps[app] : null
-  const effectiveGui = surfaces.gui && (appDeps?.guiInstalled ?? false)
-  const effectiveCli = surfaces.cli && (appDeps?.cliInstalled ?? false)
+  const effective = effectiveSurfaces(surfaces, availableSurfaces(dependencies, localApp))
   const canSubmit = remote
     ? remoteHosts.some((host) => host.id === hostId) &&
       isValidRemoteProfileName(name.trim()) &&
       !takenOnServer &&
       isValidHexColor(color)
-    : app !== '' && name.trim().length > 0 && isValidHexColor(color) && (effectiveGui || effectiveCli)
+    : localApp !== '' && isProfileFormValid(name, color, effective)
 
-  const dockIconByDefault = app !== '' && !remote && dockIconAcknowledged && appSpecs[app].dockIcon.defaultOn
-  const dockIcon = (dockIconChoice ?? dockIconByDefault) && effectiveGui
+  const dockIcon = newProfileDockIcon(dockIconChoice, localApp, dockIconAcknowledged, effective.gui)
   const dockIconConsent = useDockIconConsent({
     acknowledged: dockIconAcknowledged,
     onChoose: setDockIconChoice,
@@ -110,14 +112,14 @@ export function CreateProfileDialog({
       }
       return
     }
-    // canSubmit guarantees app !== '', so cast is safe
-    const selectedApp = app as AppId
+    // canSubmit guarantees an app on this Mac, so cast is safe
+    const selectedApp = localApp as AppId
     try {
       await onCreate({
         app: selectedApp,
         name: name.trim(),
         color,
-        surfaces: { gui: effectiveGui, cli: effectiveCli },
+        surfaces: effective,
         distinctDockIcon: dockIcon,
       })
       setName('')
@@ -145,20 +147,14 @@ export function CreateProfileDialog({
         onClose={onClose}
         onSubmit={handleSubmit}
         foot={
-          <>
-            <Button variant="ghost" size="sm" trailingKbd={<Kbd>⎋</Kbd>} disabled={submitting} onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              trailingKbd={<Kbd variant="onOrange">⏎</Kbd>}
-              disabled={!canSubmit || submitting}
-              onClick={handleSubmit}
-            >
-              {submitting ? 'Creating…' : 'Create profile'}
-            </Button>
-          </>
+          <ProfileDialogFoot
+            canSubmit={canSubmit}
+            submitting={submitting}
+            submitLabel="Create profile"
+            submittingLabel="Creating…"
+            onCancel={onClose}
+            onSubmit={handleSubmit}
+          />
         }
       >
         <ProfileFormFields
@@ -182,10 +178,10 @@ export function CreateProfileDialog({
       </Dialog>
       {/* A sibling rather than a child, so keys pressed in it are not taken for
           keys pressed in the form underneath. */}
-      {app !== '' && app !== remoteType ? (
+      {localApp !== '' ? (
         <DockIconConsentDialog
           open={dockIconConsent.open}
-          app={app}
+          app={localApp}
           onClose={dockIconConsent.cancel}
           onConfirm={dockIconConsent.asking ? dockIconConsent.confirm : undefined}
         />

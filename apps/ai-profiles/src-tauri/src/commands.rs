@@ -19,8 +19,7 @@ use crate::profiles::{self, Profile, ProfilePatch, ProfilePaths, Surface, Surfac
 use crate::remote::hosts::{HostList, RemoteHost};
 use crate::remote::{self, secrets, PairingPreview};
 use crate::sessions::{
-    self, ArchiveCheck, ArchiveReport, ArchivedSession, RestoreCheck, RestoreReport,
-    SessionSummary, TransferPlan, TransferReport, TransferRequest,
+    self, ActionCheck, MovePlan, MoveReport, RepairReport, SessionAction, SessionList,
 };
 use crate::usage::{
     self,
@@ -89,7 +88,11 @@ pub fn update_profile(id: String, patch: ProfilePatch) -> AppResult<Profile> {
 
 #[tauri::command]
 pub fn delete_profile(id: String, move_to_trash: bool) -> AppResult<()> {
-    profiles::delete(&id, move_to_trash)
+    profiles::delete(&id, move_to_trash)?;
+    // The profile is gone either way: a dismissal left behind for it is only
+    // a stale key, not worth failing the delete over.
+    let _ = app_state::forget_profile(&id);
+    Ok(())
 }
 
 /// Refuse to replace or remove a profile's wrapper while the profile is running
@@ -244,98 +247,6 @@ pub fn open_default_gui(handle: tauri::AppHandle, app: AppKind, data_dir: String
 #[tauri::command]
 pub fn profile_paths(id: String) -> AppResult<ProfilePaths> {
     profiles::paths(&id)
-}
-
-/// The Claude sessions kept by profile `id` (or `default:claude`), newest
-/// first. Reads every transcript, so it runs off the main thread.
-#[tauri::command(async)]
-pub fn list_sessions(id: String) -> AppResult<Vec<SessionSummary>> {
-    sessions::list(&sessions::home(&id)?)
-}
-
-/// What moving a session would do, without doing it.
-#[tauri::command(async)]
-pub fn plan_session_transfer(request: TransferRequest) -> AppResult<TransferPlan> {
-    sessions::plan(&request)
-}
-
-/// Move a session to another profile. See [`sessions::transfer`].
-#[tauri::command(async)]
-pub fn transfer_session(
-    app: tauri::AppHandle,
-    request: TransferRequest,
-) -> AppResult<TransferReport> {
-    use tauri::Emitter;
-    // Each step as it starts, for the dialog to show while the move runs.
-    sessions::transfer(&request, &|progress| {
-        let _ = app.emit(TRANSFER_PROGRESS_EVENT, progress);
-    })
-}
-
-/// Claude's merge of memory note `path`, which the move `request` needs
-/// decided, for the user to accept or not. See [`sessions::merge_with_claude`].
-#[tauri::command(async)]
-pub fn merge_transfer_memory(request: TransferRequest, path: String) -> AppResult<String> {
-    sessions::merge_with_claude(&request, &path)
-}
-
-/// The event a move's progress goes out on.
-const TRANSFER_PROGRESS_EVENT: &str = "session-transfer-progress";
-
-/// What archiving a session would need: a terminal to close, or the
-/// profile's desktop app to quit.
-#[tauri::command(async)]
-pub fn check_session_archive(profile_id: String, session_id: String) -> AppResult<ArchiveCheck> {
-    sessions::check_archive(&profile_id, &session_id)
-}
-
-/// Take a session out of a profile, keeping it in `session-transfer-backups`.
-/// With `quit_app`, quits the profile's desktop app first when it has to.
-#[tauri::command(async)]
-pub fn archive_session(
-    profile_id: String,
-    session_id: String,
-    quit_app: bool,
-) -> AppResult<ArchiveReport> {
-    sessions::archive(&profile_id, &session_id, quit_app)
-}
-
-/// The sessions profile `id` has archived, newest first.
-#[tauri::command(async)]
-pub fn list_archived_sessions(id: String) -> AppResult<Vec<ArchivedSession>> {
-    Ok(sessions::list_archived(&sessions::home(&id)?))
-}
-
-/// What restoring an archived session would need first.
-#[tauri::command(async)]
-pub fn check_session_restore(
-    profile_id: String,
-    session_id: String,
-    archive: String,
-) -> AppResult<RestoreCheck> {
-    sessions::check_restore(&profile_id, &session_id, &archive)
-}
-
-/// Delete an archived session for good. Returns what it freed, in bytes.
-#[tauri::command(async)]
-pub fn delete_archived_session(
-    profile_id: String,
-    session_id: String,
-    archive: String,
-) -> AppResult<u64> {
-    sessions::delete_archived(&profile_id, &session_id, &archive)
-}
-
-/// Put an archived session back. With `quit_app`, quits the profile's desktop
-/// app first when its record goes back into that app's list.
-#[tauri::command(async)]
-pub fn restore_session(
-    profile_id: String,
-    session_id: String,
-    archive: String,
-    quit_app: bool,
-) -> AppResult<RestoreReport> {
-    sessions::restore(&profile_id, &session_id, &archive, quit_app)
 }
 
 /// The remote hosts this Mac is paired with.
@@ -1190,13 +1101,17 @@ pub async fn get_profile_usage(profile_id: String) -> AppResult<ProfileUsage> {
         AppKind::Codex => {
             // app-server refreshes its own token per call, so no external
             // refresher dance is needed.
-            let provider = CodexQuotaProvider::new(
-                "ai-profiles".to_string(),
-                env!("CARGO_PKG_VERSION").to_string(),
-            );
-            Ok(usage::build(&config_dir, &provider).await)
+            Ok(usage::build(&config_dir, &CodexQuotaProvider).await)
         }
     }
+}
+
+/// The sessions profile `profile_id` (or `default:<app>`) owns. Async so a
+/// Codex listing can await `codex app-server`; a Claude listing walks every
+/// transcript of every profile of the app on a blocking thread.
+#[tauri::command]
+pub async fn list_sessions(profile_id: String) -> AppResult<SessionList> {
+    sessions::list_sessions(sessions::home_for(&profile_id)?).await
 }
 
 fn resolve_app(profile_id: &str) -> AppResult<AppKind> {
@@ -1379,4 +1294,92 @@ mod running_wrapper_tests {
         plain_result.unwrap();
         unknown_result.unwrap();
     }
+}
+
+/// What stands between session `session_id` of profile `profile_id` (or
+/// `default:<app>`) and `action`: a reason only the user can clear, or the
+/// desktop app that has to quit first. Async so a Codex check can await
+/// `codex app-server`.
+#[tauri::command]
+pub async fn check_session_action(
+    profile_id: String,
+    session_id: String,
+    action: SessionAction,
+) -> AppResult<ActionCheck> {
+    sessions::actions::check(&profile_id, &session_id, action).await
+}
+
+/// Archive session `session_id` of profile `profile_id` (or `default:<app>`),
+/// quitting the desktop app in the way first if `quit_app`. Async, as quitting
+/// the app is waited for and a Codex write awaits `codex app-server`.
+#[tauri::command]
+pub async fn archive_session(
+    profile_id: String,
+    session_id: String,
+    quit_app: bool,
+) -> AppResult<()> {
+    sessions::actions::archive(&profile_id, &session_id, quit_app).await
+}
+
+/// What moving session `session_id` of profile `profile_id` (or
+/// `default:<app>`) to profile `destination_id` would do, without doing any
+/// of it. Async, as it reads every profile's sessions on a blocking thread.
+#[tauri::command]
+pub async fn plan_session_move(
+    profile_id: String,
+    session_id: String,
+    destination_id: String,
+) -> AppResult<MovePlan> {
+    sessions::actions::plan_move(&profile_id, &session_id, &destination_id).await
+}
+
+/// Move session `session_id` of profile `profile_id` (or `default:<app>`) to
+/// profile `destination_id`: copy it there, then archive it here. A newer
+/// copy at the destination is only replaced if `replace_newer`; the desktop
+/// apps in the way are quit first if `quit_apps`.
+#[tauri::command]
+pub async fn move_session(
+    profile_id: String,
+    session_id: String,
+    destination_id: String,
+    replace_newer: bool,
+    quit_apps: bool,
+) -> AppResult<MoveReport> {
+    sessions::actions::move_session(
+        &profile_id,
+        &session_id,
+        &destination_id,
+        replace_newer,
+        quit_apps,
+    )
+    .await
+}
+
+/// What stands between the sessions of profile `profile_id` (or
+/// `default:<app>`) that need repair and their repair: the profile's desktop
+/// app, when it runs. Async, as it reads every profile's sessions on a
+/// blocking thread.
+#[tauri::command]
+pub async fn check_session_repair(profile_id: String) -> AppResult<ActionCheck> {
+    sessions::actions::check_repair(&profile_id).await
+}
+
+/// Repair the sessions of profile `profile_id` (or `default:<app>`) that its
+/// desktop app started before the profile had its own folder: move their
+/// transcripts into it. The profile's desktop app is quit first if
+/// `quit_app`. Async, as quitting the app is waited for.
+#[tauri::command]
+pub async fn repair_sessions(profile_id: String, quit_app: bool) -> AppResult<RepairReport> {
+    sessions::actions::repair_sessions(&profile_id, quit_app).await
+}
+
+/// Restore archived session `session_id` of profile `profile_id` (or
+/// `default:<app>`), quitting the desktop app in the way first if `quit_app`.
+#[tauri::command]
+pub async fn restore_session(
+    profile_id: String,
+    session_id: String,
+    quit_app: bool,
+) -> AppResult<()> {
+    sessions::actions::restore(&profile_id, &session_id, quit_app).await
 }

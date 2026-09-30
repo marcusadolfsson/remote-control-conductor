@@ -1,7 +1,5 @@
 import type { AccountStatus } from '@/lib/types'
 
-import { useProfileAccount } from '../api/use-profile-account'
-
 /**
  * How a profile's account reads in the detail header's sub-line: the email,
  * else the person's name. The plan rides along when there is one, and the
@@ -35,23 +33,4 @@ export function accountTitle(status: AccountStatus | undefined): string | undefi
     (part): part is string => part !== null,
   )
   return parts.length > 0 ? parts.join(' · ') : undefined
-}
-
-/**
- * ` · <account>` for a profile's sub-line, once its account is known. A
- * component of its own, so the account arriving re-renders this line only,
- * not the pane around it.
- */
-export function AccountPart({ profileId }: { profileId: string }) {
-  const account = useProfileAccount(profileId)
-  const label = accountLabel(account)
-  if (!label) {
-    return null
-  }
-  return (
-    <>
-      <span className="mx-2 text-border">·</span>
-      <span title={accountTitle(account)}>{label}</span>
-    </>
-  )
 }

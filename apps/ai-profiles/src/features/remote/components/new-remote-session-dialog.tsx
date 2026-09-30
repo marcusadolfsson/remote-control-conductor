@@ -22,7 +22,7 @@ type Props = {
 }
 
 /** The last part of a path: `david` for `/home/marcus/david`. */
-export function folderName(path: string): string {
+function folderName(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? ''
 }
 

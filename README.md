@@ -190,17 +190,20 @@ This started as a fork of [ai-profiles](https://github.com/bartekczyz/ai-profile
 macOS app for running several Claude accounts side by side, and it still does everything ai-profiles does.
 Like ai-profiles, it's MIT-licensed and keeps its copyright notice (see [LICENSE](LICENSE)).
 
-The changes on the Mac side are proposed upstream, one pull request each:
+It's up to date with ai-profiles 1.4.0, whose Sessions panel (list, move, archive and restore a profile's
+sessions on this Mac) grew out of #50 below. Changes on the Mac side are proposed
+upstream, one pull request each:
 
 | PR | What it adds | Status |
 |---|---|---|
 | [#47](https://github.com/bartekczyz/ai-profiles/pull/47) | Security hardening | merged |
 | [#48](https://github.com/bartekczyz/ai-profiles/pull/48) | Each Claude Desktop profile gets its own Claude Code config | merged |
 | [#49](https://github.com/bartekczyz/ai-profiles/pull/49) | The default profile can be renamed | merged |
-| [#50](https://github.com/bartekczyz/ai-profiles/pull/50) | Sessions: list, move, archive, restore | open |
+| [#50](https://github.com/bartekczyz/ai-profiles/pull/50) | Sessions: list, move, archive, restore | built on in [#66](https://github.com/bartekczyz/ai-profiles/pull/66), merged |
 | [#51](https://github.com/bartekczyz/ai-profiles/pull/51) | A color and ⌘1 for the default profile | open |
-| [#52](https://github.com/bartekczyz/ai-profiles/pull/52) | A wrapper is named after its profile in the menu bar | open |
-| [#53](https://github.com/bartekczyz/ai-profiles/pull/53) | The account a profile is signed in under | open |
+| [#53](https://github.com/bartekczyz/ai-profiles/pull/53) | The account a profile is signed in under | merged |
+| [#61](https://github.com/bartekczyz/ai-profiles/pull/61) | Claude's Dock icon says what it costs Cowork | merged |
+| [#63](https://github.com/bartekczyz/ai-profiles/pull/63) | Apps start without the config home ai-profiles was started with | merged |
 
 <details>
 <summary><b>Something worth knowing about the Claude desktop app</b></summary>

@@ -1,36 +1,32 @@
 // SPDX-License-Identifier: MIT
 
-import type { AppId } from '@/lib/app-registry'
-import type { SidebarEntry } from '@/lib/types'
+import type { RightPane } from '@/features/app-shell/lib/shortcut-gates'
 
-import { Activity, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Activity, Suspense, useCallback, useState } from 'react'
 
-import { useHotkey } from '@tanstack/react-hotkeys'
 import { useQueryClient } from '@tanstack/react-query'
-import { listen } from '@tauri-apps/api/event'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 
-import { useShortcut, useTheme } from '@/design'
 import { AboutDialog } from '@/features/about/components/about-dialog'
+import { ProfileIndexHotkeys } from '@/features/app-shell/components/profile-index-hotkeys'
+import { TitleBarDragStrip } from '@/features/app-shell/components/title-bar-drag-strip'
+import { Workspace } from '@/features/app-shell/components/workspace'
+import { shortcutGates } from '@/features/app-shell/lib/shortcut-gates'
+import { useAppShortcuts } from '@/features/app-shell/use-app-shortcuts'
+import { useWindowIntegration } from '@/features/app-shell/use-window-integration'
 import { CommandPalette } from '@/features/command-palette/components/command-palette'
 import { useCommandPalette } from '@/features/command-palette/use-command-palette'
 import { useDependencies } from '@/features/dependencies/api/use-dependencies'
-import { importableAppsFrom, useMigration } from '@/features/migration/api/use-migration'
-import { MigrationDialog } from '@/features/migration/components/migration-dialog'
-import { PathSetupBanner } from '@/features/onboarding/components/path-setup-banner'
+import { useMigrationLauncher } from '@/features/migration/api/use-migration-launcher'
+import { MigrationDialogHost } from '@/features/migration/components/migration-dialog-host'
+import { PathSetupBannerHost } from '@/features/onboarding/components/path-setup-banner-host'
 import { WelcomeDialog } from '@/features/onboarding/components/welcome-dialog'
 import { useProfileLastUsed } from '@/features/profiles/api/use-profile-last-used'
 import { useProfiles } from '@/features/profiles/api/use-profiles'
-import { appFromEntry, entryId, useSidebarEntries } from '@/features/profiles/api/use-sidebar-entries'
+import { resolveSelection, useSidebarEntries } from '@/features/profiles/api/use-sidebar-entries'
 import { useSidebarSelection } from '@/features/profiles/api/use-sidebar-selection'
-import { CreateProfileDialog } from '@/features/profiles/components/create-profile-dialog'
-import { DeleteProfileDialog } from '@/features/profiles/components/delete-profile-dialog'
-import { EditProfileDialog } from '@/features/profiles/components/edit-profile-dialog'
 import { EmptyStateScreen } from '@/features/profiles/components/empty-state-screen'
-import { ProfileDetail } from '@/features/profiles/components/profile-detail'
-import { DefaultProfileDetail } from '@/features/profiles/components/profile-detail-default'
 import { ProfileDetailSkeleton } from '@/features/profiles/components/profile-detail-skeleton'
-import { Sidebar } from '@/features/profiles/components/sidebar'
+import { ProfileDialogs } from '@/features/profiles/components/profile-dialogs'
 import { SidebarSkeleton } from '@/features/profiles/components/sidebar-skeleton'
 import { useAdoptRemoteProfiles, useRemoteHosts, useRemoteProfiles } from '@/features/remote/api/use-remote'
 import { RemoteAccountDetail } from '@/features/remote/components/remote-account-detail'
@@ -38,8 +34,6 @@ import { RemoteControlOverview, RemoteControlSidebarRow } from '@/features/remot
 import { RemoteHostSection } from '@/features/remote/components/remote-host-section'
 import { SignInDialog } from '@/features/remote/components/sign-in-dialog'
 import { parseRemoteSelection, REMOTE_CONTROL_ID, remoteSelectionId } from '@/features/remote/lib/remote-selection'
-import { SettingsView } from '@/features/settings/components/settings-view'
-import { SettingsViewSkeleton } from '@/features/settings/components/settings-view-skeleton'
 import { UpdateToastTrigger } from '@/features/updater/components/update-toast-trigger'
 import { WhatsNewHost } from '@/features/whats-new/components/whats-new-host'
 import { wrapperCommand } from '@/lib/app-registry'
@@ -56,18 +50,6 @@ type DialogState =
   | { kind: 'about' }
   | { kind: 'whats-new' }
 
-type RightPane = { kind: 'profile' } | { kind: 'settings' }
-
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
-const DISMISSAL_WINDOW_MS = 7 * SEVEN_DAYS_MS
-
-function isWithinDismissalWindow(timestamp: string | null | undefined): boolean {
-  if (!timestamp) {
-    return false
-  }
-  return Date.now() - new Date(timestamp).getTime() < DISMISSAL_WINDOW_MS
-}
-
 function AppShellSkeleton() {
   return (
     <div className="flex h-full">
@@ -75,32 +57,6 @@ function AppShellSkeleton() {
       <ProfileDetailSkeleton />
     </div>
   )
-}
-
-const profileIndexKeys = ['Mod+1', 'Mod+2', 'Mod+3', 'Mod+4', 'Mod+5', 'Mod+6', 'Mod+7', 'Mod+8', 'Mod+9'] as const
-
-type SelectByIndexHotkeyProps = {
-  index: number
-  enabled: boolean
-  onSelect: (index: number) => void
-}
-
-/**
- * One Mod+N binding per profile slot. Each instance registers a single
- * hotkey — kept as a child component so we can map over indices without
- * violating the rules-of-hooks ban on conditional/looped hook calls.
- * The discrete `profileIndexKeys` tuple keeps the keys narrowly typed
- * (`Mod+${number}` is too broad for the library's Hotkey union).
- */
-function SelectByIndexHotkey({ index, enabled, onSelect }: SelectByIndexHotkeyProps) {
-  useHotkey(
-    profileIndexKeys[index],
-    () => {
-      onSelect(index)
-    },
-    { enabled },
-  )
-  return null
 }
 
 function AppContent() {
@@ -123,288 +79,66 @@ function AppContent() {
   const queryClient = useQueryClient()
   const remoteProfiles = useRemoteProfiles(remoteHosts)
   useAdoptRemoteProfiles(remoteProfiles)
+  const remoteSelected = parseRemoteSelection(selection.selectedId)
   // A remote profile just made, being signed in.
   const [signingIn, setSigningIn] = useState<{ hostId: string; account: string } | null>(null)
-  // ⌘1..⌘9 in sidebar order: this Mac's profiles, then each server's.
-  const shortcutTargets = [
-    ...entries
-      .filter((entry): entry is Extract<SidebarEntry, { kind: 'managed' }> => entry.kind === 'managed')
-      .map((entry) => entry.profile.id),
-    ...remoteProfiles.map((profile) => profile.id),
-  ]
-  const remoteSelected = parseRemoteSelection(selection.selectedId)
-  const claudeMigration = useMigration('claude')
-  const codexMigration = useMigration('codex')
+  const migration = useMigrationLauncher()
   const appState = useAppState()
   const dependencies = useDependencies()
   const lastUsed = useProfileLastUsed()
   const palette = useCommandPalette()
   const [dialog, setDialog] = useState<DialogState>({ kind: 'none' })
-  const [submitting, setSubmitting] = useState(false)
-  const [rightPane, setRightPane] = useState<RightPane>({ kind: 'profile' })
-  // Which app's import dialog is open (null = closed). The originating
-  // surface (default-entry "Migrate", Settings, palette, ⌘I) picks the app
-  // so a ChatGPT default opens a ChatGPT import, not the Claude one.
-  const [migrationApp, setMigrationApp] = useState<AppId | null>(null)
+  const [rightPane, setRightPane] = useState<RightPane>('profile')
 
-  const migrationByApp: Record<AppId, ReturnType<typeof useMigration>> = {
-    claude: claudeMigration,
-    codex: codexMigration,
-  }
-  const activeMigration = migrationApp ? migrationByApp[migrationApp] : null
-
-  // Apps with a detected stock install — drives every "Detect and import"
-  // entry point (⌘I, palette, Settings) so ChatGPT is reachable, not just Claude.
-  const importableApps = importableAppsFrom({
-    claude: claudeMigration.existing,
-    codex: codexMigration.existing,
+  const { selected, managedSelected } = resolveSelection(entries, selection.selectedId)
+  useWindowIntegration({
+    themeMode: appState.state.themeMode,
+    selected,
+    onOpenAbout: () => setDialog({ kind: 'about' }),
   })
 
-  const theme = useTheme()
-  const persistedThemeMode = appState.state.themeMode
+  const gates = shortcutGates({
+    dialogOpen: dialog.kind !== 'none',
+    paletteOpen: palette.open,
+    migrationOpen: migration.app !== null,
+    rightPane,
+    hasSelection: selected !== null,
+    hasManagedSelection: managedSelected !== null,
+  })
 
-  useEffect(() => {
-    if (persistedThemeMode !== theme.mode) {
-      theme.setMode(persistedThemeMode)
-    }
-  }, [persistedThemeMode, theme])
+  useAppShortcuts({
+    gates,
+    onTogglePalette: palette.toggle,
+    onCreate: requestCreateProfile,
+    onToggleSettings: () => setRightPane((current) => (current === 'settings' ? 'profile' : 'settings')),
+    onDetectImport: migration.openFirstImportable,
+    // Gated on a managed selection (`gates.manageSelected`) — default rows
+    // don't support edit/delete.
+    onEditSelected: () => setDialog({ kind: 'edit' }),
+    onDeleteSelected: () => setDialog({ kind: 'delete' }),
+  })
 
-  // Suppress the system context menu app-wide in production builds — this is
-  // a Tauri window, not a browser. Inputs and `[data-selectable=true]`
-  // regions opt back in so a user can still right-click to paste into the
-  // profile name field, etc.
-  //
-  // In dev (`pnpm tauri dev` / `vite dev`) we leave the context menu alone so
-  // the webview's "Inspect Element" stays accessible while iterating.
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      return
-    }
-    function handleContextMenu(event: MouseEvent) {
-      const target = event.target as HTMLElement | null
-      if (!target) {
-        event.preventDefault()
-        return
-      }
-      if (target.closest('input, textarea, [contenteditable="true"], [data-selectable="true"]')) {
-        return
-      }
-      event.preventDefault()
-    }
-    window.addEventListener('contextmenu', handleContextMenu)
-    return () => window.removeEventListener('contextmenu', handleContextMenu)
-  }, [])
-
-  // Bridge the macOS App menu's "About Remote Control Conductor" item to our custom
-  // dialog. The menu item (set up in src-tauri/src/lib.rs) emits the
-  // `open-about` event; this listener catches it and opens the dialog.
-  // Replaces the tiny native About panel macOS would otherwise show.
-  useEffect(() => {
-    const unlistenPromise = listen('open-about', () => {
-      setDialog({ kind: 'about' })
-    })
-    return () => {
-      void unlistenPromise.then((unlisten) => {
-        unlisten()
-      })
-    }
-  }, [])
-
-  // Native (not React-synthetic) mousedown listener on the title-bar drag
-  // strip. React's synthetic events fire AFTER the browser has finished
-  // delivering the native event, by which point macOS has already decided
-  // what to do with the click — when the window is active that means
-  // `startDragging()` becomes a no-op. Binding the listener directly to
-  // the element via `addEventListener` (the pattern Tauri's own docs use)
-  // intercepts the event early enough that drag works in both
-  // active and inactive window states.
-  const dragStripRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const node = dragStripRef.current
-    if (!node) {
-      return
-    }
-    function handleMouseDown(event: MouseEvent) {
-      if (event.buttons !== 1) {
-        return
-      }
-      const appWindow = getCurrentWindow()
-      if (event.detail === 2) {
-        void appWindow.toggleMaximize()
-      } else {
-        void appWindow.startDragging()
-      }
-    }
-    node.addEventListener('mousedown', handleMouseDown)
-    return () => node.removeEventListener('mousedown', handleMouseDown)
-  }, [])
-
-  const selected = entries.find((entry) => entryId(entry) === selection.selectedId) ?? null
-  const managedSelected = selected?.kind === 'managed' ? selected.profile : null
-
-  // Tint the whole window by the selected entry's app. When nothing is
-  // selected (or this unmounts), clear the attribute so :root falls back to
-  // --color-orange.
-  useEffect(() => {
-    const app = selected ? appFromEntry(selected) : null
-    if (app) {
-      document.documentElement.dataset.app = app
-    } else {
-      delete document.documentElement.dataset.app
-    }
-    return () => {
-      delete document.documentElement.dataset.app
-    }
-  }, [selected])
-
-  const shouldShowWelcome = !appState.state.welcomeShown
-
-  const showMigration = migrationApp !== null
-
-  // Opens the import dialog for `app` after refreshing its detection. Used
-  // by every entry point that triggers migration (⌘I, Settings, palette,
-  // and the per-app default-entry "Migrate" link).
-  async function openMigration(app: AppId) {
-    await migrationByApp[app].refresh()
-    setMigrationApp(app)
-  }
-
-  const anyCliProfile = profiles.profiles.some((profile) => profile.surfaces.cli)
-  const pathBannerDismissedRecently = isWithinDismissalWindow(appState.state.pathBannerDismissedAt)
-
-  const shouldShowPathBanner =
-    appState.state.welcomeShown &&
-    dependencies.deps.localBinOnPath === false &&
-    anyCliProfile &&
-    !pathBannerDismissedRecently
-
-  const dialogOpen = dialog.kind !== 'none'
-  const overlayOpen = dialogOpen || palette.open || showMigration
-  const detailEnabled = rightPane.kind === 'profile' && selected !== null && !overlayOpen
-
-  // Global shortcuts — suppressed when a blocking overlay (dialog,
-  // palette, migration prompt) is on top, EXCEPT toggle-palette which
-  // must keep working while the palette itself is open so ⌘K closes it.
-  useShortcut('toggle-palette', palette.toggle, { enabled: !dialogOpen && !showMigration })
-  useShortcut('open-create-profile', requestCreateProfile, { enabled: !overlayOpen })
-  useShortcut(
-    'toggle-settings',
-    () => setRightPane((current) => (current.kind === 'settings' ? { kind: 'profile' } : { kind: 'settings' })),
-    { enabled: !overlayOpen },
-  )
-  useShortcut(
-    'open-detect-import',
-    () => {
-      const target = importableApps[0]
-      if (target) {
-        void openMigration(target)
-      }
-    },
-    { enabled: !overlayOpen },
-  )
-
-  // ⌘F focuses the sidebar profile-filter input. Gated on the sidebar
-  // being mounted (empty-state owns the whole window with no sidebar)
-  // and no overlay being on top.
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const sidebarVisible = entries.length > 0
-  useShortcut(
-    'focus-search',
-    () => {
-      searchInputRef.current?.focus()
-      searchInputRef.current?.select()
-    },
-    { enabled: !overlayOpen && sidebarVisible },
-  )
-
-  // Detail-scope shortcuts — gated on a managed profile being selected, the
-  // detail pane being on top, and no overlay (dialog/palette/migration)
-  // covering it. Default rows don't support edit/delete.
-  //
-  // ⏎ and ⌘C are registered by the detail pane's surfaces panel instead, so
-  // the keyboard route runs the buttons' handlers verbatim (same error
-  // surfacing, same copy confirmation). `detailEnabled` is handed down as
-  // `shortcutsEnabled` so they stay gated the same way these are.
-  useShortcut(
-    'edit-selected',
-    () => {
-      if (managedSelected) {
-        setDialog({ kind: 'edit' })
-      }
-    },
-    { enabled: detailEnabled && managedSelected !== null },
-  )
-  useShortcut(
-    'delete-selected',
-    () => {
-      if (managedSelected) {
-        setDialog({ kind: 'delete' })
-      }
-    },
-    { enabled: detailEnabled && managedSelected !== null },
-  )
-
-  async function handleCreate(input: Parameters<typeof profiles.create>[0]) {
-    setSubmitting(true)
-    try {
-      const created = await profiles.create(input)
-      selection.select(created.id)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleEdit(input: {
-    name: string
-    color: string
-    surfaces: { gui: boolean; cli: boolean }
-    distinctDockIcon: boolean
-  }) {
-    if (!managedSelected) {
-      return
-    }
-    setSubmitting(true)
-    try {
-      const nameChanged = input.name !== managedSelected.name
-      const colorChanged = input.color.toLowerCase() !== managedSelected.color.toLowerCase()
-      const dockIconChanged = input.distinctDockIcon !== managedSelected.distinctDockIcon
-      if (nameChanged || colorChanged || dockIconChanged) {
-        await profiles.update({
-          id: managedSelected.id,
-          patch: {
-            name: input.name,
-            color: input.color,
-            ...(dockIconChanged ? { distinctDockIcon: input.distinctDockIcon } : {}),
-          },
-        })
-      }
-      if (input.surfaces.gui !== managedSelected.surfaces.gui) {
-        await profiles.toggle({ id: managedSelected.id, surface: 'gui', enabled: input.surfaces.gui })
-      }
-      if (input.surfaces.cli !== managedSelected.surfaces.cli) {
-        await profiles.toggle({ id: managedSelected.id, surface: 'cli', enabled: input.surfaces.cli })
-      }
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleDelete(input: { moveToTrash: boolean }) {
-    if (!managedSelected) {
-      return
-    }
-    await profiles.remove({ id: managedSelected.id, ...input })
-  }
-
-  async function acknowledgeDockIcon() {
-    await appState.update({ dockIconAcknowledgedAt: new Date().toISOString() })
-  }
+  // ⌘1..⌘9 in sidebar order: this Mac's profiles, then each server's.
+  const remoteIds = remoteProfiles.map((profile) => profile.id)
+  const shortcutTargets = [
+    ...entries.flatMap((entry) => (entry.kind === 'managed' ? [entry.profile.id] : [])),
+    ...remoteIds,
+  ]
 
   function requestCreateProfile() {
     setDialog({ kind: 'create' })
   }
 
-  if (shouldShowWelcome) {
+  function selectEntry(id: string) {
+    selection.select(id)
+    setRightPane('profile')
+  }
+
+  function closeDialog() {
+    setDialog({ kind: 'none' })
+  }
+
+  if (!appState.state.welcomeShown) {
     return (
       <WelcomeDialog
         open
@@ -415,156 +149,94 @@ function AppContent() {
     )
   }
 
-  // The empty-state screen owns the whole window when there are no entries
-  // yet — no sidebar, no panes. As soon as the first profile/default entry
-  // lands, the sidebar appears and the detail pane takes over.
-  const isEmpty = entries.length === 0 && remoteHosts.length === 0
-
   return (
     <div className="relative flex h-full flex-col">
-      {/* Tauri overlay-style title bar dragger.
-          `titleBarStyle: Overlay` in tauri.conf.json drops the system
-          title bar so the traffic-light area becomes empty content space.
-          Without an explicit drag handler the user can't move the window
-          (the traffic lights themselves are buttons, not draggers). This
-          28px-tall transparent strip explicitly calls Tauri's
-          `startDragging()` on mousedown — the docs' recommended approach
-          for SPA-rendered drag regions, more reliable than relying on the
-          attribute-based auto-binding which often misses React-rendered
-          nodes. Double-click toggles maximize, matching native macOS
-          behaviour.
-          - z-10 keeps it below dialogs (z-40/50) so overlay surfaces stay
-            interactive.
-          - It sits over the sidebar's `pt-11` empty area and the right
-            pane's `pt-10`/`py-9` top padding, so no interactive content
-            is obscured. */}
-      <div ref={dragStripRef} aria-hidden className="absolute inset-x-0 top-0 z-10 h-7" />
+      <TitleBarDragStrip />
       <UpdateToastTrigger />
-      {shouldShowPathBanner ? (
-        <PathSetupBanner
-          onFixed={async () => {
-            await dependencies.refresh()
-          }}
-          onDismiss={async () => {
-            await appState.update({ pathBannerDismissedAt: new Date().toISOString() })
-          }}
-        />
-      ) : null}
-      {isEmpty ? (
+      <PathSetupBannerHost />
+      {/* The empty-state screen owns the whole window when there are no entries
+          yet — no sidebar, no panes. As soon as the first profile/default entry
+          lands, the sidebar appears and the detail pane takes over. */}
+      {/* Paired servers alone are enough for the sidebar. */}
+      {entries.length === 0 && remoteHosts.length === 0 ? (
         <EmptyStateScreen
           dependencies={dependencies.deps}
           onCreate={requestCreateProfile}
           onRefresh={dependencies.refresh}
         />
       ) : (
-        <div className="flex min-h-0 flex-1">
-          <Sidebar
-            entries={entries}
-            selectedId={selection.selectedId}
-            searchInputRef={searchInputRef}
-            onSelect={(id) => {
-              selection.select(id)
-              setRightPane({ kind: 'profile' })
-            }}
-            onCreate={requestCreateProfile}
-            onSettings={() => setRightPane({ kind: 'settings' })}
-            onReorder={(ids) => {
-              void profiles.reorder(ids)
-            }}
-            alwaysShowAppGlyphs={remoteHosts.length > 0}
-            renderExtraSections={(query) => [
-              remoteHosts.length > 0 && 'remote control'.includes(query.trim().toLowerCase()) ? (
-                <RemoteControlSidebarRow
-                  key={REMOTE_CONTROL_ID}
-                  selected={selection.selectedId === REMOTE_CONTROL_ID}
-                  onSelect={() => {
-                    selection.select(REMOTE_CONTROL_ID)
-                    setRightPane({ kind: 'profile' })
-                  }}
-                />
-              ) : null,
-              ...remoteHosts.map((host) => (
-                <RemoteHostSection
-                  key={host.id}
-                  host={host}
-                  selectedId={selection.selectedId}
-                  query={query}
-                  shortcutIndexFor={(id) => shortcutTargets.indexOf(id)}
-                  onSelect={(id) => {
-                    selection.select(id)
-                    setRightPane({ kind: 'profile' })
-                  }}
-                />
-              )),
-            ]}
-          />
-          {/* Activity keeps the off-screen pane mounted so toggling gear ↔ profile
-              never re-fetches dependencies/backups or re-runs profile-detail effects.
-              ProfileDetail manages its own Suspense for the per-profile paths fetch
-              — the header identity block renders with sidebar-provided data
-              immediately. */}
-          <Activity mode={rightPane.kind === 'profile' && selected !== null ? 'visible' : 'hidden'}>
-            {selected?.kind === 'managed' ? (
-              <QueryErrorBoundary>
-                <ProfileDetail
-                  profile={selected.profile}
-                  shortcutsEnabled={detailEnabled}
-                  onEdit={() => setDialog({ kind: 'edit' })}
-                  onDelete={() => setDialog({ kind: 'delete' })}
-                />
-              </QueryErrorBoundary>
-            ) : selected?.kind === 'default' ? (
-              <QueryErrorBoundary>
-                <DefaultProfileDetail
-                  entry={selected.entry}
-                  onMigrate={async () => {
-                    await openMigration(selected.entry.app)
-                  }}
-                />
-              </QueryErrorBoundary>
-            ) : null}
-          </Activity>
-          <Activity mode={rightPane.kind === 'profile' && remoteSelected !== null ? 'visible' : 'hidden'}>
-            {remoteSelected ? (
-              <QueryErrorBoundary>
-                <RemoteAccountDetail
-                  key={selection.selectedId}
-                  hostId={remoteSelected.hostId}
-                  account={remoteSelected.account}
-                  onRenamed={(name) => selection.select(remoteSelectionId(remoteSelected.hostId, name))}
-                />
-              </QueryErrorBoundary>
-            ) : null}
-          </Activity>
-          <Activity
-            mode={rightPane.kind === 'profile' && selection.selectedId === REMOTE_CONTROL_ID ? 'visible' : 'hidden'}
-          >
-            {selection.selectedId === REMOTE_CONTROL_ID ? (
-              <QueryErrorBoundary>
-                <RemoteControlOverview onSelectProfile={(id) => selection.select(id)} />
-              </QueryErrorBoundary>
-            ) : null}
-          </Activity>
-          <Activity mode={rightPane.kind === 'settings' ? 'visible' : 'hidden'}>
-            <Suspense fallback={<SettingsViewSkeleton />}>
-              <QueryErrorBoundary>
-                <SettingsView
-                  onClose={() => setRightPane({ kind: 'profile' })}
-                  onOpenMigration={(app) => {
-                    void openMigration(app)
-                  }}
-                  onOpenAbout={() => setDialog({ kind: 'about' })}
-                />
-              </QueryErrorBoundary>
-            </Suspense>
-          </Activity>
-        </div>
+        <Workspace
+          entries={entries}
+          selectedId={selection.selectedId}
+          selected={selected}
+          rightPane={rightPane}
+          detailShortcutsEnabled={gates.detail}
+          searchShortcutEnabled={gates.global}
+          onSelect={selectEntry}
+          onCreate={requestCreateProfile}
+          onRightPaneChange={setRightPane}
+          onReorder={(ids) => {
+            void profiles.reorder(ids)
+          }}
+          onEdit={() => setDialog({ kind: 'edit' })}
+          onDelete={() => setDialog({ kind: 'delete' })}
+          onOpenMigration={migration.open}
+          onOpenAbout={() => setDialog({ kind: 'about' })}
+          alwaysShowAppGlyphs={remoteHosts.length > 0}
+          renderExtraSections={(query) => [
+            remoteHosts.length > 0 && 'remote control'.includes(query.trim().toLowerCase()) ? (
+              <RemoteControlSidebarRow
+                key={REMOTE_CONTROL_ID}
+                selected={selection.selectedId === REMOTE_CONTROL_ID}
+                onSelect={() => selectEntry(REMOTE_CONTROL_ID)}
+              />
+            ) : null,
+            ...remoteHosts.map((host) => (
+              <RemoteHostSection
+                key={host.id}
+                host={host}
+                selectedId={selection.selectedId}
+                query={query}
+                shortcutIndexFor={(id) => shortcutTargets.indexOf(id)}
+                onSelect={selectEntry}
+              />
+            )),
+          ]}
+          extraPanes={
+            <>
+              <Activity mode={rightPane === 'profile' && remoteSelected !== null ? 'visible' : 'hidden'}>
+                {remoteSelected ? (
+                  <QueryErrorBoundary>
+                    <RemoteAccountDetail
+                      key={selection.selectedId}
+                      hostId={remoteSelected.hostId}
+                      account={remoteSelected.account}
+                      onRenamed={(name) => selection.select(remoteSelectionId(remoteSelected.hostId, name))}
+                    />
+                  </QueryErrorBoundary>
+                ) : null}
+              </Activity>
+              <Activity
+                mode={rightPane === 'profile' && selection.selectedId === REMOTE_CONTROL_ID ? 'visible' : 'hidden'}
+              >
+                {selection.selectedId === REMOTE_CONTROL_ID ? (
+                  <QueryErrorBoundary>
+                    <RemoteControlOverview onSelectProfile={(id) => selection.select(id)} />
+                  </QueryErrorBoundary>
+                ) : null}
+              </Activity>
+            </>
+          }
+        />
       )}
 
-      <CreateProfileDialog
-        // Fresh each time it opens, so it starts on the type it was opened for.
-        key={dialog.kind === 'create' ? (dialog.remoteHostId ?? 'local') : 'closed'}
-        open={dialog.kind === 'create'}
+      <ProfileDialogs
+        createOpen={dialog.kind === 'create'}
+        editOpen={dialog.kind === 'edit'}
+        deleteOpen={dialog.kind === 'delete'}
+        profile={managedSelected}
+        onClose={closeDialog}
+        onCreated={selection.select}
         remoteHosts={remoteHosts}
         initialRemoteHostId={dialog.kind === 'create' ? dialog.remoteHostId : undefined}
         onCreateRemote={async ({ hostId, name, color }) => {
@@ -572,85 +244,35 @@ function AppContent() {
           await remoteSetProfileColor({ hostId, account: name, color })
           await queryClient.invalidateQueries({ queryKey: queryKeys.remote.accounts(hostId) })
           await queryClient.invalidateQueries({ queryKey: queryKeys.remote.hosts })
-          selection.select(remoteSelectionId(hostId, name))
-          setRightPane({ kind: 'profile' })
+          selectEntry(remoteSelectionId(hostId, name))
           setSigningIn({ hostId, account: name })
         }}
-        dependencies={dependencies.deps}
-        dockIconAcknowledged={appState.state.dockIconAcknowledgedAt !== null}
-        submitting={submitting}
-        onClose={() => setDialog({ kind: 'none' })}
-        onAcknowledgeDockIcon={acknowledgeDockIcon}
-        onCreate={handleCreate}
       />
-      {managedSelected ? (
-        <EditProfileDialog
-          open={dialog.kind === 'edit'}
-          profile={managedSelected}
-          dependencies={dependencies.deps}
-          dockIconAcknowledged={appState.state.dockIconAcknowledgedAt !== null}
-          submitting={submitting}
-          onClose={() => setDialog({ kind: 'none' })}
-          onAcknowledgeDockIcon={acknowledgeDockIcon}
-          onSave={handleEdit}
-        />
-      ) : null}
-      {managedSelected ? (
-        <DeleteProfileDialog
-          open={dialog.kind === 'delete'}
-          profile={managedSelected}
-          onClose={() => setDialog({ kind: 'none' })}
-          onConfirm={handleDelete}
-        />
-      ) : null}
 
       <Suspense fallback={null}>
         <AboutDialog
           open={dialog.kind === 'about'}
-          onClose={() => setDialog({ kind: 'none' })}
+          onClose={closeDialog}
           onOpenWhatsNew={() => setDialog({ kind: 'whats-new' })}
         />
         <WhatsNewHost
           open={dialog.kind === 'whats-new'}
           onOpen={() => setDialog({ kind: 'whats-new' })}
-          onClose={() => setDialog({ kind: 'none' })}
+          onClose={closeDialog}
         />
       </Suspense>
 
-      {migrationApp !== null && activeMigration !== null ? (
-        <MigrationDialog
-          open
-          app={migrationApp}
-          existing={activeMigration.existing}
-          onClose={() => {
-            setMigrationApp(null)
-          }}
-          onImport={async (input) => {
-            const imported = await activeMigration.import(input)
-            await profiles.refresh()
-            selection.select(imported.id)
-            setMigrationApp(null)
-            setRightPane({ kind: 'profile' })
-            return imported
-          }}
-        />
-      ) : null}
+      <MigrationDialogHost
+        launcher={migration}
+        onImported={async (imported) => {
+          await profiles.refresh()
+          selectEntry(imported.id)
+        }}
+      />
 
-      {/* Mod+1..Mod+9 — one binding per profile slot: this Mac's managed
-          profiles, then each server's (default rows are not numbered).
-          Disabled when any overlay is open to avoid stealing keystrokes
-          from the dialog/palette/migration prompt. */}
-      {shortcutTargets.slice(0, 9).map((id, index) => (
-        <SelectByIndexHotkey
-          key={id}
-          index={index}
-          enabled={!overlayOpen}
-          onSelect={() => {
-            selection.select(id)
-            setRightPane({ kind: 'profile' })
-          }}
-        />
-      ))}
+      {/* Disabled when any overlay is open to avoid stealing keystrokes from
+          the dialog/palette/migration prompt. */}
+      <ProfileIndexHotkeys entries={entries} extraIds={remoteIds} enabled={gates.global} onSelect={selectEntry} />
       {signingIn
         ? (() => {
             const host = remoteHosts.find((candidate) => candidate.id === signingIn.hostId)
@@ -670,12 +292,9 @@ function AppContent() {
         open={palette.open}
         entries={entries}
         selectedId={selection.selectedId}
-        importableApps={importableApps}
+        importableApps={migration.importableApps}
         onClose={palette.close}
-        onSwitch={(id) => {
-          selection.select(id)
-          setRightPane({ kind: 'profile' })
-        }}
+        onSwitch={selectEntry}
         onLaunch={(profileId) => {
           void lastUsed.launchDesktop(profileId)
         }}
@@ -683,9 +302,9 @@ function AppContent() {
           void lastUsed.copyCli({ profileId: profile.id, command: wrapperCommand(profile.app, profile.slug) })
         }}
         onCreate={requestCreateProfile}
-        onSettings={() => setRightPane({ kind: 'settings' })}
+        onSettings={() => setRightPane('settings')}
         onImport={(app) => {
-          void openMigration(app)
+          void migration.open(app)
         }}
       />
     </div>

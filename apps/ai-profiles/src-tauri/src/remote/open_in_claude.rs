@@ -258,11 +258,12 @@ pub fn open_in_claude(
 /// `open [-a <app>] <url>`.
 fn open(app: Option<&Path>, url: &str) -> AppResult<()> {
     let mut command = Command::new("/usr/bin/open");
-    // Starting the app for the link, `open` would hand it ai-profiles' own
-    // environment, and with it any config home ai-profiles was started with:
-    // the stock app would run its Code tab on another profile's config.
-    for kind in [AppKind::Claude, AppKind::Codex] {
-        command.env_remove(kind.spec().cli_config_env);
+    // Starting the app for the link, `open` would hand it this app's own
+    // environment: any config home it was started with (the stock app would
+    // run its Code tab on another profile's config), and a whole Claude Code
+    // session's variables when it runs inside one, as the MCP server does.
+    for key in crate::inherited_env::current() {
+        command.env_remove(key);
     }
     if let Some(app) = app {
         command.arg("-a").arg(app);
