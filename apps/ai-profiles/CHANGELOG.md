@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.6.1) (2026-09-30)
+
+### Added
+
+* **remote:** a session waiting on a restart to update shows which Claude Code it runs and which the host has installed (2.1.281 → 2.1.285), and Restart all names the version it updates to
+* **mcp:** list_sessions says which Claude Code a restart updates to (installedVersion)
+
 ## [0.6.0](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.6.0) (2026-09-30)
 
 Brings in ai-profiles 1.4.0.
