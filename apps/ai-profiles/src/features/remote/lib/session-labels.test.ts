@@ -2,7 +2,15 @@ import type { RemoteSession } from '@/lib/types'
 
 import { describe, expect, it } from 'vitest'
 
-import { restartAllLabel, restartAllTitle, restartTitle, sessionTitle, stampToIso } from './session-labels'
+import {
+  installedVersionOf,
+  restartAllLabel,
+  restartAllTitle,
+  restartTitle,
+  sessionTitle,
+  stampToIso,
+  updateVersions,
+} from './session-labels'
 
 function session(overrides: Partial<RemoteSession> = {}): RemoteSession {
   return {
@@ -45,6 +53,11 @@ describe('restartTitle', () => {
   it('says a restart takes on the newer claude, and which one the session runs', () => {
     expect(restartTitle(session({ updatePending: true, claudeVersion: '2.1.0' }), true)).toContain('(it runs 2.1.0)')
     expect(restartTitle(session({ updatePending: true }), true)).toContain('(it runs an older one)')
+    expect(
+      restartTitle(session({ updatePending: true, claudeVersion: '2.1.281', installedVersion: '2.1.282' }), true),
+    ).toBe(
+      'Restart to update: stop it and start it again on Claude Code 2.1.282, installed on the host (it runs 2.1.281)',
+    )
   })
 
   it('says a session outside tmux restarts in it', () => {
@@ -65,5 +78,24 @@ describe('Restart all', () => {
     expect(restartAllLabel(null, 0)).toBe('Restart all')
     expect(restartAllTitle(2)).toMatch(/: 2 of them run an older one$/)
     expect(restartAllTitle(0)).toBe("Stop every running session and start it again on the host's current claude")
+  })
+
+  it('names the Claude Code it would update to, when the host says', () => {
+    expect(restartAllLabel(null, 4, '2.1.282')).toBe('Restart all · 4 to update (2.1.282)')
+    expect(restartAllTitle(4, '2.1.282')).toMatch(/: 4 of them run an older one than 2\.1\.282$/)
+  })
+})
+
+describe('update versions', () => {
+  it('reads as from → to while a session waits on an update and both are known', () => {
+    const waiting = session({ updatePending: true, claudeVersion: '2.1.281', installedVersion: '2.1.282' })
+    expect(updateVersions(waiting)).toBe('2.1.281 → 2.1.282')
+    expect(updateVersions({ ...waiting, installedVersion: null })).toBeNull()
+    expect(updateVersions({ ...waiting, updatePending: false })).toBeNull()
+  })
+
+  it('takes the installed version from whichever session says', () => {
+    expect(installedVersionOf([session(), session({ installedVersion: '2.1.282' })])).toBe('2.1.282')
+    expect(installedVersionOf([session()])).toBeNull()
   })
 })

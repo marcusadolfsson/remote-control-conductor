@@ -13,7 +13,7 @@ import { sessionPanelClasses, sessionRowClasses } from '@/features/profiles/comp
 import { formatBytes } from '@/lib/format-bytes'
 
 import { useRemoteArchivedSessions, useRemoteHostInfo, useRemoteSessions } from '../api/use-remote'
-import { restartAllLabel, restartAllTitle } from '../lib/session-labels'
+import { installedVersionOf, restartAllLabel, restartAllTitle } from '../lib/session-labels'
 import { ConfirmEndDialog } from './confirm-end-dialog'
 import { MoveRemoteSessionDialog } from './move-remote-session-dialog'
 import { RemoteArchivedSessions } from './remote-archived-sessions'
@@ -247,7 +247,9 @@ function SessionsBody({ sessions, hostLabel, children }: SessionsBodyProps) {
  */
 function RunningSessions({ running, progress, locked, onRestartAll, row }: RunningSessionsProps) {
   // Sessions on an older claude than the host now has installed.
-  const updating = running.filter((session) => session.updatePending).length
+  const waiting = running.filter((session) => session.updatePending)
+  const updating = waiting.length
+  const installed = installedVersionOf(waiting)
   return (
     <div className="mb-4">
       <SessionsHeading title="Running" count={running.length}>
@@ -257,11 +259,11 @@ function RunningSessions({ running, progress, locked, onRestartAll, row }: Runni
             size="sm"
             leadingIcon={<RotateCw className="h-3.5 w-3.5" />}
             disabled={locked}
-            title={restartAllTitle(updating)}
+            title={restartAllTitle(updating, installed)}
             className={updating > 0 ? 'text-amber hover:text-amber' : undefined}
             onClick={onRestartAll}
           >
-            {restartAllLabel(progress, updating)}
+            {restartAllLabel(progress, updating, installed)}
           </Button>
         ) : null}
       </SessionsHeading>

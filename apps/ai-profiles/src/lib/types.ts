@@ -392,6 +392,8 @@ export type RemoteSession = {
    * Restart to update"): a restart takes it on.
    */
   updatePending?: boolean
+  /** The newer Claude Code installed on the host, when `updatePending`. */
+  installedVersion?: string | null
 }
 
 /** The subfolders of a folder on a remote host, for picking where to work. */

@@ -16,7 +16,7 @@ import { Button, cn, StatusDot } from '@/design'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/design/ui/dropdown-menu'
 import { SessionRowBase } from '@/features/profiles/components/session-row-base'
 
-import { restartTitle, sessionTitle } from '../lib/session-labels'
+import { restartTitle, sessionTitle, updateVersions } from '../lib/session-labels'
 import { attachCommand, tmuxAttach } from '../lib/tmux-attach'
 import { OpenInClaudeButton } from './open-in-claude-button'
 
@@ -154,16 +154,27 @@ function SessionBadges({ session, busy }: SessionBadgesProps) {
         <StatusDot tone={stopping ? 'neutral' : 'success'} />
         {stopping ? 'Stopping…' : tmuxAttach(session) ? 'Open' : 'Open outside tmux'}
       </span>
-      {session.updatePending && !stopping ? (
-        <span
-          className="inline-flex shrink-0 items-center gap-1 text-meta text-amber"
-          title={`It runs Claude Code ${session.claudeVersion ?? 'an older version'}, and a newer one is installed on the host. Restart it to update.`}
-        >
-          <RotateCw aria-hidden className="h-3 w-3" />
-          Restart to update
-        </span>
-      ) : null}
+      {session.updatePending && !stopping ? <UpdateBadge session={session} /> : null}
     </>
+  )
+}
+
+/**
+ * That the session waits on a restart to take the newer Claude Code on the
+ * host, with both versions when the host says which it has.
+ */
+function UpdateBadge({ session }: { session: RemoteSession }) {
+  const versions = updateVersions(session)
+  const newer = session.installedVersion ? `Claude Code ${session.installedVersion} is` : 'a newer one is'
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 text-meta text-amber"
+      title={`It runs Claude Code ${session.claudeVersion ?? 'an older version'}, and ${newer} installed on the host. Restart it to update.`}
+    >
+      <RotateCw aria-hidden className="h-3 w-3" />
+      Restart to update
+      {versions ? <span className="font-mono text-[10.5px] text-amber/80">{versions}</span> : null}
+    </span>
   )
 }
 
