@@ -6,6 +6,7 @@ import { Button, Dialog, Kbd, useToast } from '@/design'
 import { sessionErrorMessage } from '@/features/profiles/components/session-error-message'
 
 import { useSwitchAccountSignOut } from '../api/use-remote'
+import { sameAccount, sessionCount, switchEffect } from '../lib/switch-account'
 import { SignInDialog } from './sign-in-dialog'
 
 type Props = {
@@ -16,10 +17,6 @@ type Props = {
 }
 
 type Step = 'confirm' | 'signingIn' | 'sameAccount'
-
-function sessions(count: number): string {
-  return `${count} ${count === 1 ? 'session' : 'sessions'}`
-}
 
 /**
  * Switching a profile to another Claude account, say from personal to work:
@@ -32,7 +29,6 @@ export function SwitchAccountDialog({ open, host, account, onClose }: Props) {
   const toast = useToast()
   const [step, setStep] = useState<Step>('confirm')
   const [previous, setPrevious] = useState<string | null>(null)
-  const running = account.runningSessions
   const current = account.account?.email ?? null
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: start over each time it opens
@@ -49,20 +45,20 @@ export function SwitchAccountDialog({ open, host, account, onClose }: Props) {
       await signOut.mutateAsync()
       setStep('signingIn')
     } catch {
-      // Shown below.
+      // Shown in the dialog.
     }
   }
 
   function handleSignedIn(signed: RemoteAccount) {
     const now = signed.account?.email ?? null
-    if (previous !== null && now !== null && previous.toLowerCase() === now.toLowerCase()) {
+    if (sameAccount(previous, now)) {
       setStep('sameAccount')
       return
     }
     const resuming = signed.pendingResume ?? 0
     toast.success(
       `${account.name} is on ${now ?? 'another account'}`,
-      resuming > 0 ? `${sessions(resuming)} resuming, in the same conversations.` : `On ${host.label}.`,
+      resuming > 0 ? `${sessionCount(resuming)} resuming, in the same conversations.` : `On ${host.label}.`,
     )
     onClose()
   }
@@ -70,7 +66,6 @@ export function SwitchAccountDialog({ open, host, account, onClose }: Props) {
   if (!open) {
     return null
   }
-
   if (step === 'signingIn') {
     return (
       <SignInDialog
@@ -84,74 +79,150 @@ export function SwitchAccountDialog({ open, host, account, onClose }: Props) {
       />
     )
   }
-
   if (step === 'sameAccount') {
     return (
-      <Dialog
-        open
-        title={`Still ${previous}`}
-        description={`${account.name} signed in to the same account again.`}
+      <SameAccountDialog
+        profile={account.name}
+        previous={previous}
+        signingOut={signOut.isPending}
         onClose={onClose}
-        foot={
-          <>
-            <Button variant="ghost" size="sm" trailingKbd={<Kbd>⎋</Kbd>} onClick={onClose}>
-              Keep it
-            </Button>
-            <Button variant="primary" size="sm" disabled={signOut.isPending} onClick={handleSwitch}>
-              {signOut.isPending ? 'Signing out…' : 'Sign in as another'}
-            </Button>
-          </>
-        }
-      >
-        <p className="text-body text-ink-soft">
-          The browser was still signed in to claude.ai as {previous}. Switch account on claude.ai first, then sign in
-          again. Its sessions are running again meanwhile.
-        </p>
-      </Dialog>
+        onRetry={handleSwitch}
+      />
     )
   }
+  return (
+    <ConfirmSwitchDialog
+      host={host}
+      account={account}
+      signingOut={signOut.isPending}
+      error={signOut.isError ? signOut.error : null}
+      onClose={onClose}
+      onSwitch={handleSwitch}
+    />
+  )
+}
 
+type ConfirmSwitchDialogProps = {
+  /**
+   * The host the profile is on.
+   */
+  host: RemoteHost
+  /**
+   * The profile to switch.
+   */
+  account: RemoteAccount
+  /**
+   * Whether it is signing out now.
+   */
+  signingOut: boolean
+  /**
+   * Why signing out failed, if it did.
+   */
+  error: unknown
+  /**
+   * Closes without switching.
+   */
+  onClose: () => void
+  /**
+   * Signs the profile out, to sign in as the other account.
+   */
+  onSwitch: () => void
+}
+
+/**
+ * What switching does, before it's done: which sessions stop and resume,
+ * and which account to sign in as in the browser.
+ */
+function ConfirmSwitchDialog({ host, account, signingOut, error, onClose, onSwitch }: ConfirmSwitchDialogProps) {
+  const current = account.account?.email ?? null
   return (
     <Dialog
       open
       title={`Switch ${account.name} to another account?`}
       description={current ? `Signed in as ${current}, on ${host.label}.` : `On ${host.label}.`}
       onClose={onClose}
-      onSubmit={handleSwitch}
+      onSubmit={onSwitch}
       foot={
         <>
-          <Button variant="ghost" size="sm" trailingKbd={<Kbd>⎋</Kbd>} disabled={signOut.isPending} onClick={onClose}>
+          <Button variant="ghost" size="sm" trailingKbd={<Kbd>⎋</Kbd>} disabled={signingOut} onClick={onClose}>
             Cancel
           </Button>
           <Button
             variant="primary"
             size="sm"
             trailingKbd={<Kbd variant="onOrange">⏎</Kbd>}
-            disabled={signOut.isPending}
-            onClick={handleSwitch}
+            disabled={signingOut}
+            onClick={onSwitch}
           >
-            {signOut.isPending ? 'Signing out…' : 'Switch account'}
+            {signingOut ? 'Signing out…' : 'Switch account'}
           </Button>
         </>
       }
     >
       <div className="space-y-2.5 text-body text-ink-soft">
-        <p>
-          {running > 0
-            ? `Its ${sessions(running)} ${running === 1 ? 'stops' : 'stop'}, and ${running === 1 ? 'resumes' : 'resume'} under the new account as soon as it's signed in: the same conversations, with Remote Control on. `
-            : ''}
-          Nothing moves, and no other profile is touched.
-        </p>
+        <p>{switchEffect(account.runningSessions)}</p>
         <p className="text-muted">
           A sign-in page opens in your browser. Sign in there as the other account
           {current ? `: if claude.ai shows ${current}, switch account on claude.ai first` : ''}.
         </p>
-        {signOut.isError ? (
+        {error ? (
           <p role="alert" className="text-meta text-red">
-            {sessionErrorMessage(signOut.error, 'It could not be signed out.')}
+            {sessionErrorMessage(error, 'It could not be signed out.')}
           </p>
         ) : null}
       </div>
+    </Dialog>
+  )
+}
+
+type SameAccountDialogProps = {
+  /**
+   * The profile being switched.
+   */
+  profile: string
+  /**
+   * The account it was on, and is on again.
+   */
+  previous: string | null
+  /**
+   * Whether it is signing out again now.
+   */
+  signingOut: boolean
+  /**
+   * Keeps the account it's on.
+   */
+  onClose: () => void
+  /**
+   * Signs out again, to sign in as another account.
+   */
+  onRetry: () => void
+}
+
+/**
+ * The browser signed the profile in to the account it was already on.
+ */
+function SameAccountDialog({ profile, previous, signingOut, onClose, onRetry }: SameAccountDialogProps) {
+  return (
+    <Dialog
+      open
+      title={`Still ${previous}`}
+      description={`${profile} signed in to the same account again.`}
+      onClose={onClose}
+      foot={
+        <>
+          <Button variant="ghost" size="sm" trailingKbd={<Kbd>⎋</Kbd>} onClick={onClose}>
+            Keep it
+          </Button>
+          <Button variant="primary" size="sm" disabled={signingOut} onClick={onRetry}>
+            {signingOut ? 'Signing out…' : 'Sign in as another'}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-body text-ink-soft">
+        The browser was still signed in to claude.ai as {previous}. Switch account on claude.ai first, then sign in
+        again. Its sessions are running again meanwhile.
+      </p>
     </Dialog>
   )
 }

@@ -55,7 +55,9 @@ describe('sublineParts', () => {
   })
 
   it('says whose account it is, on what plan, and how long the sign-in lasts', () => {
-    const until = new Date(Date.now() + 3 * 24 * hour).toISOString()
+    // An hour over three days, so the clock moving on while the test runs
+    // can't make it two.
+    const until = new Date(Date.now() + 3 * 24 * hour + hour).toISOString()
     const parts = sublineParts(account({ signedInUntil: until }), false)
     expect(parts.map((part) => part.id)).toEqual(['identity', 'plan', 'left'])
     expect(parts[0]).toEqual({ id: 'identity', text: 'marcus@example.com', title: account().configDir })
