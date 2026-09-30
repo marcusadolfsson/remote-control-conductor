@@ -5,11 +5,11 @@
 
 use std::collections::HashMap;
 
+use ai_profiles_core::api::{Decision, MemoryAction, Side};
 use ai_profiles_core::api::{
     NewSessionRequest, RemoteSession, TransferMemoryFile, TransferRequest as RemoteTransferRequest,
     WindowKey,
 };
-use ai_profiles_core::memory::{Decision, MemoryAction, Side};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};

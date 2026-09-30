@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.2](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.6.2) (2026-09-30)
+
+### Fixed
+
+* **server:** a move on a host keeps the files' modification times, which Claude Code sorts sessions by, instead of giving them the time of the move
+* **server:** what a move replaces is moved whole into the backup rather than copied and then deleted, and a move that fails part way, archiving the source included, is taken back
+
+### Changed
+
+* **server:** moving, archiving and merging memory on a host live in the server; core keeps what the app and the server share
+
 ## [0.6.1](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.6.1) (2026-09-30)
 
 ### Added

@@ -6,11 +6,14 @@
 //! session folder beside the transcript (subagents, tool results),
 //! `file-history/<id>` (what `/rewind` restores), `session-env/<id>`,
 //! `tasks/<id>`, `todos/<id>-*.json`, the plans the transcript names, and
-//! the transcript itself, last. Each item is copied under a temporary name
-//! and renamed into place. Whatever a move replaces or removes in the
-//! destination is backed up first, to
+//! the transcript itself, last. Each item is copied under a temporary name,
+//! keeping its modification times, and renamed into place. Whatever a move
+//! replaces or removes in the destination is moved, whole, to
 //! `<destination>/session-transfer-backups/<id>/<stamp>/`, at its path in
-//! the account. Project memory is merged, not copied: see [`crate::memory`].
+//! the account, never deleted. Every change is logged in a [`Journal`], so a
+//! move that fails part way is taken back: what it put in place is set aside
+//! and what it replaced is put back, as ai-profiles' own moves do. Project
+//! memory is merged, not copied: see [`crate::memory`].
 //!
 //! Archiving moves only the transcript, to
 //! `<account>/session-transfer-backups/<id>/<stamp>-archived/`, at its path
@@ -22,30 +25,14 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use serde::{Deserialize, Serialize};
-
-use crate::transcript::is_safe_name;
+use ai_profiles_core::api::ItemAction;
+use ai_profiles_core::transcript::is_safe_name;
 
 /// Where backups and archives go, in each account.
 pub const BACKUPS_DIR: &str = "session-transfer-backups";
 
 /// The end of an archive folder's name: `<stamp>-archived`.
 pub const ARCHIVED_SUFFIX: &str = "-archived";
-
-/// What a move does with one item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ItemAction {
-    /// Not in the destination yet.
-    Copy,
-    /// Already there, identical.
-    Same,
-    /// There, different: backed up, then replaced.
-    Replace,
-    /// Only the destination has it, left over from an earlier copy of the
-    /// session: backed up, then removed.
-    Remove,
-}
 
 /// One thing a move copies, replaces or removes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -244,30 +231,168 @@ pub fn mtime_secs(path: &Path) -> u64 {
         .unwrap_or(0)
 }
 
-/// Carry out `items`: first back up, under `backup_root`, everything that
-/// will be replaced or removed, then apply them in order. `true` if
-/// anything was backed up.
-pub fn apply_items(items: &[Item], backup_root: &Path) -> io::Result<bool> {
+/// Carry out `items`, in order, backing up under `backup_root` everything
+/// they replace or remove and logging each change in `journal`, so a move
+/// that fails later can be taken back. `true` if anything was backed up.
+pub fn apply_items(items: &[Item], backup_root: &Path, journal: &mut Journal) -> io::Result<bool> {
     let mut backed_up = false;
     for item in items {
-        if matches!(item.action, ItemAction::Replace | ItemAction::Remove) {
-            let backup = backup_root.join(&item.rel);
-            if let Some(parent) = backup.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            remove_any(&backup)?;
-            copy_any(&item.to, &backup)?;
-            backed_up = true;
-        }
-    }
-    for item in items {
+        let backup = backup_root.join(&item.rel);
         match item.action {
-            ItemAction::Copy | ItemAction::Replace => replace_item(&item.from, &item.to)?,
-            ItemAction::Remove => remove_any(&item.to)?,
+            ItemAction::Copy | ItemAction::Replace => {
+                backed_up |= place_copy(&item.from, &item.to, &backup, journal)?;
+            }
+            ItemAction::Remove => {
+                remove_to_backup(&item.to, &backup, journal)?;
+                backed_up = true;
+            }
             ItemAction::Same => {}
         }
     }
     Ok(backed_up)
+}
+
+/// Something a move changed at the destination.
+#[derive(Debug)]
+enum Change {
+    /// Put at `path`; what was there before is at `replaced`, if anything was.
+    Placed {
+        path: PathBuf,
+        replaced: Option<PathBuf>,
+    },
+    /// Taken from `path` to `backup`.
+    Removed { path: PathBuf, backup: PathBuf },
+}
+
+/// What a move has changed at the destination so far, in order, to take back
+/// should a later step fail.
+#[derive(Debug, Default)]
+pub struct Journal(Vec<Change>);
+
+impl Journal {
+    /// Take back what was changed, the last first: what the move put in place
+    /// is set aside into `undone`, at its path relative to `root`, and what it
+    /// replaced or removed is put back. Nothing is deleted. Returns what
+    /// couldn't be taken back, saying where it stays.
+    pub fn undo(&self, root: &Path, undone: &Path) -> Vec<String> {
+        let mut stranded = Vec::new();
+        for change in self.0.iter().rev() {
+            match change {
+                Change::Placed { path, replaced } => {
+                    let aside = undone.join(path.strip_prefix(root).unwrap_or(path));
+                    if exists(path) {
+                        if let Err(err) = set_aside(path, &aside) {
+                            stranded.push(format!(
+                                "{} stays as the move left it: {err}",
+                                path.display()
+                            ));
+                            continue;
+                        }
+                    }
+                    if let Some(backup) = replaced {
+                        if let Err(err) = fs::rename(backup, path) {
+                            stranded.push(format!(
+                                "what was at {} stays in {}: {err}",
+                                path.display(),
+                                backup.display()
+                            ));
+                        }
+                    }
+                }
+                Change::Removed { path, backup } => {
+                    if let Err(err) = fs::rename(backup, path) {
+                        stranded.push(format!(
+                            "what was at {} stays in {}: {err}",
+                            path.display(),
+                            backup.display()
+                        ));
+                    }
+                }
+            }
+        }
+        stranded
+    }
+}
+
+/// Move what is at `path` to `aside`, making its folder: renamed, so it's the
+/// very same file or folder, kept. Anything already at `aside` is a leftover
+/// of this same move's backup folder, and goes.
+fn set_aside(path: &Path, aside: &Path) -> io::Result<()> {
+    if let Some(parent) = aside.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    remove_any(aside)?;
+    fs::rename(path, aside)
+}
+
+/// Put what `build` makes at `to`: built under a temporary name beside it,
+/// so nothing ever reads half of it, then renamed into place, with what was
+/// at `to` moved to `backup` first, and back if the rename fails. Logged in
+/// `journal`. Returns whether something was there.
+fn place(
+    to: &Path,
+    backup: &Path,
+    journal: &mut Journal,
+    build: impl FnOnce(&Path) -> io::Result<()>,
+) -> io::Result<bool> {
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp = temp_path(to);
+    remove_any(&tmp)?;
+    if let Err(err) = build(&tmp) {
+        let _ = remove_any(&tmp);
+        return Err(err);
+    }
+    let replaced = exists(to);
+    if replaced {
+        if let Err(err) = set_aside(to, backup) {
+            let _ = remove_any(&tmp);
+            return Err(err);
+        }
+    }
+    if let Err(err) = fs::rename(&tmp, to) {
+        let _ = remove_any(&tmp);
+        if replaced {
+            let _ = fs::rename(backup, to);
+        }
+        return Err(err);
+    }
+    journal.0.push(Change::Placed {
+        path: to.to_path_buf(),
+        replaced: replaced.then(|| backup.to_path_buf()),
+    });
+    Ok(replaced)
+}
+
+/// Put a copy of `from` at `to` (see [`place`]).
+pub fn place_copy(
+    from: &Path,
+    to: &Path,
+    backup: &Path,
+    journal: &mut Journal,
+) -> io::Result<bool> {
+    place(to, backup, journal, |tmp| copy_any(from, tmp))
+}
+
+/// Put `bytes` at `to` (see [`place`]).
+pub fn place_bytes(
+    bytes: &[u8],
+    to: &Path,
+    backup: &Path,
+    journal: &mut Journal,
+) -> io::Result<bool> {
+    place(to, backup, journal, |tmp| fs::write(tmp, bytes))
+}
+
+/// Move what is at `path` to `backup`, logged in `journal`.
+fn remove_to_backup(path: &Path, backup: &Path, journal: &mut Journal) -> io::Result<()> {
+    set_aside(path, backup)?;
+    journal.0.push(Change::Removed {
+        path: path.to_path_buf(),
+        backup: backup.to_path_buf(),
+    });
+    Ok(())
 }
 
 /// `<account_dir>/session-transfer-backups/<id>/<stamp>`.
@@ -616,37 +741,17 @@ fn temp_path(path: &Path) -> PathBuf {
     path.with_file_name(format!("{name}.ai-profiles-tmp.{}", std::process::id()))
 }
 
-/// Put a copy of `from` at `to`, replacing whatever is there, by way of a
-/// temporary name beside it.
-pub fn replace_item(from: &Path, to: &Path) -> io::Result<()> {
-    if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let tmp = temp_path(to);
-    remove_any(&tmp)?;
-    copy_any(from, &tmp)?;
-    if fs::symlink_metadata(to).is_ok_and(|meta| meta.is_dir()) {
-        fs::remove_dir_all(to)?;
-    }
-    fs::rename(&tmp, to)
-}
-
-/// Write `bytes` to `to` by way of a temporary name beside it.
-pub fn write_into_place(to: &Path, bytes: &[u8]) -> io::Result<()> {
-    if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let tmp = temp_path(to);
-    fs::write(&tmp, bytes)?;
-    fs::rename(&tmp, to)
-}
-
-/// Copy a file, folder or link, keeping links as links.
+/// Copy a file, folder or link, keeping links as links, and files and
+/// folders their modification time, which Claude Code sorts sessions by. A
+/// folder's is set once what it holds is copied, as copying into it changes
+/// it.
 pub fn copy_any(from: &Path, to: &Path) -> io::Result<()> {
-    let kind = fs::symlink_metadata(from)?.file_type();
+    let meta = fs::symlink_metadata(from)?;
+    let kind = meta.file_type();
     if kind.is_symlink() {
-        std::os::unix::fs::symlink(fs::read_link(from)?, to)?;
-    } else if kind.is_dir() {
+        return std::os::unix::fs::symlink(fs::read_link(from)?, to);
+    }
+    if kind.is_dir() {
         fs::create_dir(to)?;
         for entry in fs::read_dir(from)? {
             let entry = entry?;
@@ -655,7 +760,7 @@ pub fn copy_any(from: &Path, to: &Path) -> io::Result<()> {
     } else {
         fs::copy(from, to)?;
     }
-    Ok(())
+    fs::File::open(to)?.set_modified(meta.modified()?)
 }
 
 fn remove_any(path: &Path) -> io::Result<()> {
@@ -668,6 +773,8 @@ fn remove_any(path: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::MetadataExt;
+
     use super::*;
 
     const ID: &str = "11111111-2222-3333-4444-555555555555";
@@ -733,7 +840,7 @@ mod tests {
         let to = destination_transcript(&src, &transcript, &dst, ID).unwrap();
         let items = plan_items(&src, &dst, ID, &transcript, &to, &[]).unwrap();
         let backup = backup_root(&dst, ID, "20260101-000000");
-        assert!(apply_items(&items, &backup).unwrap());
+        assert!(apply_items(&items, &backup, &mut Journal::default()).unwrap());
         assert_eq!(fs::read_to_string(&to).unwrap(), "new\n");
         assert!(!dst.join(format!("session-env/{ID}")).exists());
         assert_eq!(
@@ -748,6 +855,98 @@ mod tests {
         assert_eq!(
             actions(&again),
             vec![(format!("projects/-w/{ID}.jsonl"), ItemAction::Same)]
+        );
+    }
+
+    #[test]
+    fn a_copy_keeps_the_modification_times_claude_sorts_sessions_by() {
+        let root = tempfile::tempdir().unwrap();
+        let from = root.path().join("from");
+        write(&from.join("notes/a.txt"), "a");
+        let long_ago =
+            std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+        fs::File::open(from.join("notes/a.txt"))
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
+        fs::File::open(&from)
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
+        let to = root.path().join("to");
+        copy_any(&from, &to).unwrap();
+        let modified = |path: &Path| fs::metadata(path).unwrap().modified().unwrap();
+        assert_eq!(modified(&to.join("notes/a.txt")), long_ago);
+        assert_eq!(modified(&to), long_ago);
+    }
+
+    #[test]
+    fn a_move_that_fails_part_way_is_taken_back_and_loses_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let (src, dst) = (root.path().join("a"), root.path().join("b"));
+        write(&src.join("file-history/s/1"), "new history");
+        write(&dst.join("file-history/s/1"), "old history");
+        write(&dst.join("session-env/s/e"), "left over");
+        let item = |rel: &str, action| Item {
+            from: src.join(rel),
+            to: dst.join(rel),
+            rel: PathBuf::from(rel),
+            action,
+        };
+        let items = [
+            item("file-history/s", ItemAction::Replace),
+            item("session-env/s", ItemAction::Remove),
+            // Its source is gone by now: the move fails here.
+            item("tasks/s", ItemAction::Copy),
+        ];
+        let backup = backup_root(&dst, "s", "20260101-000000");
+        let mut journal = Journal::default();
+        assert!(apply_items(&items, &backup, &mut journal).is_err());
+        assert_eq!(
+            fs::read_to_string(dst.join("file-history/s/1")).unwrap(),
+            "new history"
+        );
+
+        let undone = backup.join("undone");
+        assert_eq!(journal.undo(&dst, &undone), Vec::<String>::new());
+        assert_eq!(
+            fs::read_to_string(dst.join("file-history/s/1")).unwrap(),
+            "old history"
+        );
+        assert_eq!(
+            fs::read_to_string(dst.join("session-env/s/e")).unwrap(),
+            "left over"
+        );
+        assert_eq!(
+            fs::read_to_string(undone.join("file-history/s/1")).unwrap(),
+            "new history"
+        );
+        assert!(!dst.join("tasks/s").exists());
+    }
+
+    #[test]
+    fn what_a_move_replaces_is_kept_whole_in_the_backup() {
+        let root = tempfile::tempdir().unwrap();
+        let (src, dst) = (root.path().join("a"), root.path().join("b"));
+        write(&src.join("plans/p.md"), "new plan");
+        write(&dst.join("plans/p.md"), "old plan");
+        let before = fs::metadata(dst.join("plans/p.md")).unwrap().ino();
+        let items = [Item {
+            from: src.join("plans/p.md"),
+            to: dst.join("plans/p.md"),
+            rel: PathBuf::from("plans/p.md"),
+            action: ItemAction::Replace,
+        }];
+        let backup = backup_root(&dst, "s", "20260101-000000");
+        assert!(apply_items(&items, &backup, &mut Journal::default()).unwrap());
+        // The very file that was there, not a copy of it.
+        assert_eq!(
+            fs::metadata(backup.join("plans/p.md")).unwrap().ino(),
+            before
+        );
+        assert_eq!(
+            fs::read_to_string(dst.join("plans/p.md")).unwrap(),
+            "new plan"
         );
     }
 
@@ -835,7 +1034,8 @@ mod tests {
         assert!(!old.exists());
         assert_eq!(list_archived(&account)[0].path, with_suffix(&old, ".gz"));
         assert!(compress_archived(&account).is_empty(), "once");
-        let info = crate::transcript::read_transcript(&with_suffix(&old, ".gz")).unwrap();
+        let info =
+            ai_profiles_core::transcript::read_transcript(&with_suffix(&old, ".gz")).unwrap();
         assert!(info.first_timestamp.is_none() && !info.has_reply);
     }
 
@@ -883,7 +1083,7 @@ mod tests {
             16 + 7,
             "plans aren't the session's alone"
         );
-        apply_items(&items, &dir.path().join("backups")).unwrap();
+        apply_items(&items, &dir.path().join("backups"), &mut Journal::default()).unwrap();
 
         // A copy that changed since: nothing is deleted.
         write(&moved, "{\"type\":\"user\"}\nchanged\n");

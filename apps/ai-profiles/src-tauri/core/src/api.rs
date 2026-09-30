@@ -10,10 +10,58 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::account::ProfileAccount;
-use crate::memory::{Decision, MemoryAction, Side};
-use crate::session_move::ItemAction;
 
 pub const API_VERSION: u32 = 1;
+
+/// What a move does with one item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ItemAction {
+    /// Not in the destination yet.
+    Copy,
+    /// Already there, identical.
+    Same,
+    /// There, different: backed up, then replaced.
+    Replace,
+    /// Only the destination has it, left over from an earlier copy of the
+    /// session: backed up, then removed.
+    Remove,
+}
+
+/// Which side of a move.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Side {
+    Source,
+    Destination,
+}
+
+/// What a move does with one memory file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MemoryAction {
+    /// The destination doesn't have it: copied.
+    Add,
+    /// Identical: nothing.
+    Same,
+    /// The index: merged line by line.
+    Index,
+    /// Both sides' changes merge cleanly.
+    Merge,
+    /// Both changed it in the same place, or there's no common version to
+    /// merge against: the user decides.
+    Conflict,
+}
+
+/// What the user decided for a conflict.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "take", content = "text")]
+pub enum Decision {
+    Source,
+    Destination,
+    /// Claude's merge, as the user accepted it.
+    Merged(String),
+}
 
 /// Sent by the client with every request, `ai-profiles/<version>`.
 pub const CLIENT_HEADER: &str = "x-aip-client";
