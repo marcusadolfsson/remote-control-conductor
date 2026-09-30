@@ -4,7 +4,6 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
@@ -13,72 +12,45 @@ use std::time::{Duration, Instant, SystemTime};
 use ai_profiles_core::api::{RemoteSession, TmuxWindow};
 use ai_profiles_core::registry::{read_registry, RegistryEntry};
 use ai_profiles_core::transcript::{
-    read_transcript, read_transcript_from, transcripts, TranscriptInfo,
+    read_on, short_line, title_file, transcripts, TranscriptInfo, TranscriptRead,
 };
 
 use crate::accounts::AccountDir;
 use crate::procs::ProcessTable;
 
-/// Parsed transcripts, keyed by path: listing reads every transcript, and
-/// most don't change between two lists. One that did usually grew, as a
+/// What was read of each transcript, by path: listing reads every transcript,
+/// and most don't change between two lists. One that did usually grew, as a
 /// running session's does (to hundreds of megabytes), so only what was
-/// appended is read. One that was replaced (moves write a new file and rename
-/// it over), shrank or changed before the end of what was read is read again
-/// in full.
+/// appended is read (see [`read_on`]).
 #[derive(Default)]
-pub struct TranscriptCache(Mutex<HashMap<PathBuf, Cached>>);
-
-struct Cached {
-    inode: u64,
-    modified: SystemTime,
-    size: u64,
-    /// Where the next read goes on from: the end of the last complete line.
-    offset: u64,
-    info: TranscriptInfo,
-}
+pub struct TranscriptCache(Mutex<HashMap<PathBuf, TranscriptRead>>);
 
 impl TranscriptCache {
     /// What the transcript at `path` says, reading only what changed.
     pub fn info(&self, path: &Path) -> Option<TranscriptInfo> {
-        self.read(path, &fs::metadata(path).ok()?)
+        self.read(path)
+            .map(|read| with_title_file(path, read.info()))
     }
 
-    fn read(&self, path: &Path, metadata: &fs::Metadata) -> Option<TranscriptInfo> {
-        let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-        let (inode, size) = (metadata.ino(), metadata.len());
-        let gzipped = path.extension().is_some_and(|ext| ext == "gz");
-        let known = self.0.lock().ok()?.remove(path);
-        let (info, offset) = match known {
-            Some(cached)
-                if cached.inode == inode && cached.modified == modified && cached.size == size =>
-            {
-                (cached.info, cached.offset)
-            }
-            // Read on from where the last read stopped, unless the file
-            // turns out to have changed before there.
-            Some(cached) if !gzipped && cached.inode == inode && cached.offset <= size => {
-                match read_transcript_from(path, cached.info, cached.offset) {
-                    Ok(read) => read,
-                    Err(_) => read_transcript_from(path, TranscriptInfo::default(), 0).ok()?,
-                }
-            }
-            _ if gzipped => (read_transcript(path).ok()?, size),
-            _ => read_transcript_from(path, TranscriptInfo::default(), 0).ok()?,
-        };
+    fn read(&self, path: &Path) -> Option<TranscriptRead> {
+        let previous = self.0.lock().ok()?.remove(path);
+        let read = read_on(path, previous).ok()?;
         if let Ok(mut cache) = self.0.lock() {
-            cache.insert(
-                path.to_path_buf(),
-                Cached {
-                    inode,
-                    modified,
-                    size,
-                    offset,
-                    info: info.clone(),
-                },
-            );
+            cache.insert(path.to_path_buf(), read.clone());
         }
-        Some(info)
+        Some(read)
     }
+}
+
+/// `info` with its name taken from the file Claude Code keeps beside the
+/// transcript at `path` when no record in it carries one. Read each time, as
+/// that file changes on its own.
+fn with_title_file(path: &Path, info: &TranscriptInfo) -> TranscriptInfo {
+    let mut info = info.clone();
+    if info.custom_title.is_none() {
+        info.custom_title = title_file(path);
+    }
+    info
 }
 
 /// The live `claude` processes of an account, by session id: its registry
@@ -153,19 +125,19 @@ pub fn list(
     let mut sessions: Vec<(SystemTime, RemoteSession)> = Vec::new();
     let mut listed = std::collections::HashSet::new();
     for (_, id, path) in transcripts(&account.dir) {
-        let Ok(metadata) = fs::metadata(&path) else {
+        let Some(read) = cache.read(&path) else {
             continue;
         };
-        let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-        let Some(info) = cache.read(&path, &metadata) else {
-            continue;
-        };
+        let info = with_title_file(&path, read.info());
         let live = running.get(&id);
-        if info.is_empty() && live.is_none() {
+        // A subagent's transcript isn't a session, and one nothing happened in
+        // is left out as Claude's own /resume leaves it out.
+        if (info.is_empty() || info.subagent_only()) && live.is_none() {
             continue;
         }
         listed.insert(id.clone());
-        sessions.push((modified, summary(id, &info, live, modified, metadata.len())));
+        let used = last_used(&info, read.modified());
+        sessions.push((used, summary(id, &info, live, used, read.size())));
     }
     // Claude writes a session's transcript with its first message; one
     // that's running but hasn't had one yet is listed from the registry.
@@ -196,6 +168,16 @@ pub fn list(
     sessions.into_iter().map(|(_, session)| session).collect()
 }
 
+/// When a session was last used: its transcript's last `timestamp`, or when
+/// that is missing or doesn't parse, when the file was last written.
+fn last_used(info: &TranscriptInfo, modified: SystemTime) -> SystemTime {
+    info.last_timestamp
+        .as_deref()
+        .and_then(|timestamp| chrono::DateTime::parse_from_rfc3339(timestamp).ok())
+        .map(SystemTime::from)
+        .unwrap_or(modified)
+}
+
 fn summary(
     id: String,
     info: &TranscriptInfo,
@@ -211,7 +193,8 @@ fn summary(
             .or_else(|| user_named_live.and_then(|entry| entry.name.clone()))
             .or_else(|| info.ai_title.clone())
             // What Remote Control calls it (after its folder, unless named).
-            .or_else(|| live.and_then(|entry| entry.name.clone())),
+            .or_else(|| live.and_then(|entry| entry.name.clone()))
+            .or_else(|| info.first_prompt.as_deref().and_then(short_line)),
         named: info.custom_title.is_some() || user_named_live.is_some(),
         cwd: live
             .and_then(|entry| entry.cwd.clone())
@@ -329,6 +312,52 @@ mod tests {
             dir,
             is_default: false,
         }
+    }
+
+    #[test]
+    fn a_subagents_transcript_is_no_session_and_a_title_file_names_one() {
+        let root = tempfile::tempdir().unwrap();
+        let account = account(root.path());
+        let project = account.dir.join("projects/-home-m-code");
+        write(
+            &project.join("44444444-4444-4444-4444-444444444444.jsonl"),
+            concat!(
+                r#"{"type":"user","isSidechain":true,"timestamp":"2026-09-01T10:00:00Z","message":{"content":"task"}}"#,
+                "\n",
+                r#"{"type":"assistant","isSidechain":true,"timestamp":"2026-09-01T10:00:01Z"}"#,
+                "\n",
+            ),
+        );
+        let untitled = "55555555-5555-5555-5555-555555555555";
+        write(
+            &project.join(format!("{untitled}.jsonl")),
+            concat!(
+                r#"{"type":"user","isSidechain":false,"timestamp":"2026-09-01T10:00:00Z","message":{"content":"Look into the flaky build"}}"#,
+                "\n",
+                r#"{"type":"assistant","isSidechain":false,"timestamp":"2026-09-01T10:00:01Z"}"#,
+                "\n",
+            ),
+        );
+        let processes = FakeProcesses(HashSet::new());
+        let cache = TranscriptCache::default();
+
+        let sessions = list(&account, &processes, &cache);
+        assert!(!sessions.iter().any(|s| s.id.starts_with("4444")));
+        let untitled_session = sessions.iter().find(|s| s.id == untitled).unwrap();
+        assert_eq!(
+            untitled_session.title.as_deref(),
+            Some("Look into the flaky build")
+        );
+        assert_eq!(untitled_session.updated_at, "2026-09-01T10:00:01+00:00");
+
+        write(
+            &project.join(untitled).join("custom-title.json"),
+            r#"{"customTitle":"Flaky build"}"#,
+        );
+        let sessions = list(&account, &processes, &cache);
+        let named = sessions.iter().find(|s| s.id == untitled).unwrap();
+        assert_eq!(named.title.as_deref(), Some("Flaky build"));
+        assert!(named.named);
     }
 
     #[test]
