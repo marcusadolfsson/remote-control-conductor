@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.3](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.6.3) (2026-09-30)
+
+### Added
+
+* **remote:** a server can add its name to its Remote Control session names, in parentheses: "Deploy (xjopa1)". It's set per host in Settings → Remote hosts, kept on the server so every paired Mac shares it, and applies to every session the server starts or resumes. A session that has a title is renamed to include it, and a name that ends that way already isn't given it twice
+
+### Fixed
+
+* **server:** sessions keep the name they're started with on Claude Code 2.1.286, which takes a session's own name from `--name` only
+
 ## [0.6.2](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.6.2) (2026-09-30)
 
 ### Fixed
