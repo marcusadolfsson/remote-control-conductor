@@ -2,7 +2,7 @@ import { useProfileAccount } from '@/features/profiles/api/use-profile-account'
 import { SessionRowBase, sessionPanelClasses } from '@/features/profiles/components/session-row-base'
 
 import { useRemoteControlSessions } from '../api/use-remote'
-import { OpenInClaudeButton } from './remote-account-detail'
+import { OpenInClaudeButton } from './open-in-claude-button'
 
 /**
  * On a Claude profile on this Mac: the sessions on the paired hosts that run

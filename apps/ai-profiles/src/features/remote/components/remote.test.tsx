@@ -41,8 +41,9 @@ import {
 } from '@/lib/commands'
 import { renderWithQuery } from '@/test/render-with-query'
 
+import { attachCommand } from '../lib/tmux-attach'
 import { PairHostDialog } from './pair-host-dialog'
-import { attachCommand, RemoteAccountDetail } from './remote-account-detail'
+import { RemoteAccountDetail } from './remote-account-detail'
 import { RemoteHostSection } from './remote-host-section'
 import { windowKeyFor } from './remote-window'
 import { SignInDialog } from './sign-in-dialog'

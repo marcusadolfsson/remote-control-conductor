@@ -6,6 +6,7 @@ import { Input } from '@/design/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/design/ui/select'
 import { appSpecs, shownAppIds } from '@/lib/app-registry'
 
+import { newRemoteNameHint } from '../lib/remote-profile-name'
 import { ColorSwatchPicker } from './color-swatch-picker'
 import { ProfileSurfaceFields } from './profile-surface-fields'
 
@@ -14,15 +15,6 @@ export const remoteType = 'remote'
 
 /** An app on this Mac, a profile on a server, or not chosen yet. */
 export type ProfileType = AppId | typeof remoteType | ''
-
-/**
- * A name the server takes for a new account folder: letters, digits, `-` and
- * `_`, starting with a letter or digit, at most 64, and not `default`. Mirrors
- * `valid_new_name` in the server.
- */
-export function isValidRemoteProfileName(name: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name) && name !== 'default'
-}
 
 type Props = {
   app: ProfileType
@@ -107,7 +99,7 @@ export function ProfileFormFields({
       <AppTypeField app={app} installedApps={installedApps} remote={remote} onAppChange={onAppChange} />
     ) : null
   if (app === remoteType) {
-    return remote ? (
+    return (
       <RemoteFields
         name={name}
         color={color}
@@ -116,7 +108,7 @@ export function ProfileFormFields({
         onNameChange={onNameChange}
         onColorChange={onColorChange}
       />
-    ) : null
+    )
   }
   return (
     <div className="space-y-4">
@@ -261,45 +253,41 @@ function Field({ label, htmlFor, children }: FieldProps) {
   )
 }
 
+type RemoteFieldsProps = {
+  /** The name as typed. */
+  name: string
+  /** The chosen color. */
+  color: string
+  /** The paired servers, and which is chosen; the form offers no remote type without them. */
+  remote: Props['remote']
+  /** The type Select, when the type can still be chosen. */
+  typeField: ReactNode
+  /** Takes the name as typed. */
+  onNameChange: (name: string) => void
+  /** Takes the chosen color. */
+  onColorChange: (color: string) => void
+}
+
+type ServerFieldProps = {
+  /** The paired servers, and which is chosen. */
+  remote: NonNullable<Props['remote']>
+}
+
 /**
  * A profile on a paired server: which server, then a name the server can use
  * as its account folder, and the color it shows in with here. Claude runs on
  * the server, in tmux, so there are no surfaces on this Mac to pick.
  */
-function RemoteFields({
-  name,
-  color,
-  remote,
-  typeField,
-  onNameChange,
-  onColorChange,
-}: {
-  name: string
-  color: string
-  remote: NonNullable<Props['remote']>
-  typeField: ReactNode
-  onNameChange: (name: string) => void
-  onColorChange: (color: string) => void
-}) {
+function RemoteFields({ name, color, remote, typeField, onNameChange, onColorChange }: RemoteFieldsProps) {
+  if (!remote) {
+    return null
+  }
   const host = remote.hosts.find((candidate) => candidate.id === remote.hostId)
-  const trimmed = name.trim()
+  const hint = newRemoteNameHint(name, host?.label, remote.taken)
   return (
     <div className="space-y-4">
       {typeField}
-      <Field label="Server">
-        <Select value={remote.hostId} onValueChange={remote.onHostChange}>
-          <SelectTrigger aria-label="Server" className="w-full">
-            <SelectValue placeholder="Choose a server" />
-          </SelectTrigger>
-          <SelectContent>
-            {remote.hosts.map((candidate) => (
-              <SelectItem key={candidate.id} value={candidate.id}>
-                {candidate.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
+      <ServerField remote={remote} />
       <Field htmlFor="profile-name" label="Name">
         <Input
           autoFocus
@@ -313,20 +301,7 @@ function RemoteFields({
           autoCapitalize="off"
           spellCheck={false}
         />
-        <p
-          className={cn(
-            'mt-1.5 font-mono text-mono',
-            trimmed && (!isValidRemoteProfileName(trimmed) || remote.taken) ? 'text-red' : 'text-muted-strong',
-          )}
-        >
-          {trimmed === ''
-            ? '\u00A0'
-            : !isValidRemoteProfileName(trimmed)
-              ? 'Letters, digits, - and _, starting with a letter or digit. "default" is taken.'
-              : remote.taken
-                ? `${host?.label ?? 'The server'} already has a profile called ${trimmed}.`
-                : `On ${host?.label ?? 'the server'}: ~/.claude-accounts/${trimmed}`}
-        </p>
+        <p className={cn('mt-1.5 font-mono text-mono', hint.problem ? 'text-red' : 'text-muted-strong')}>{hint.text}</p>
       </Field>
       <Field label="Color">
         <ColorSwatchPicker value={color} onChange={onColorChange} />
@@ -335,5 +310,25 @@ function RemoteFields({
         After it's made, you sign it in: its sign-in page opens in your browser, and you paste the code back here.
       </p>
     </div>
+  )
+}
+
+/** The paired server the profile is made on. */
+function ServerField({ remote }: ServerFieldProps) {
+  return (
+    <Field label="Server">
+      <Select value={remote.hostId} onValueChange={remote.onHostChange}>
+        <SelectTrigger aria-label="Server" className="w-full">
+          <SelectValue placeholder="Choose a server" />
+        </SelectTrigger>
+        <SelectContent>
+          {remote.hosts.map((candidate) => (
+            <SelectItem key={candidate.id} value={candidate.id}>
+              {candidate.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
   )
 }

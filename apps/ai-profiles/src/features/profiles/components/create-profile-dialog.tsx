@@ -16,9 +16,10 @@ import {
   newProfileDockIcon,
   preselectedApp,
 } from '../lib/profile-form'
+import { isValidRemoteProfileName } from '../lib/remote-profile-name'
 import { DockIconConsentDialog } from './dock-icon-consent-dialog'
 import { ProfileDialogFoot } from './profile-dialog-foot'
-import { isValidRemoteProfileName, ProfileFormFields, type ProfileType, remoteType } from './profile-form-fields'
+import { ProfileFormFields, type ProfileType, remoteType } from './profile-form-fields'
 import { useDockIconConsent } from './use-dock-icon-consent'
 
 type Props = {
