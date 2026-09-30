@@ -42,10 +42,6 @@ type Props = {
    */
   remoteHosts?: Array<RemoteHost>
   /**
-   * Open the create dialog on the remote type, on this server.
-   */
-  initialRemoteHostId?: string
-  /**
    * Makes a profile on a server. Resolves once it exists there.
    */
   onCreateRemote?: (input: { hostId: string; name: string; color: string }) => Promise<void>
@@ -63,7 +59,6 @@ export function ProfileDialogs({
   onClose,
   onCreated,
   remoteHosts,
-  initialRemoteHostId,
   onCreateRemote,
 }: Props) {
   const profiles = useProfiles()
@@ -114,11 +109,10 @@ export function ProfileDialogs({
   return (
     <>
       <CreateProfileDialog
-        // Fresh each time it opens, so it starts on the type it was opened for.
-        key={createOpen ? (initialRemoteHostId ?? 'local') : 'closed'}
+        // Fresh each time it opens, so it starts empty again.
+        key={createOpen ? 'open' : 'closed'}
         open={createOpen}
         remoteHosts={remoteHosts}
-        initialRemoteHostId={initialRemoteHostId}
         onCreateRemote={onCreateRemote}
         dependencies={dependencies.deps}
         dockIconAcknowledged={dockIconAcknowledged}

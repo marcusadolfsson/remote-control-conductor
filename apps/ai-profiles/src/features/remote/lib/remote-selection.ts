@@ -31,3 +31,16 @@ export function parseRemoteSelection(id: string | null): RemoteSelection | null 
   }
   return { hostId: rest.slice(0, split), account: rest.slice(split + 1) }
 }
+
+/**
+ * Pure: whether `id` is a remote selection that still holds among `hosts`:
+ * the Remote Control entry while any host is paired, an account while its
+ * host is.
+ */
+export function isLiveRemoteSelection(id: string, hosts: ReadonlyArray<{ id: string }>): boolean {
+  if (id === REMOTE_CONTROL_ID) {
+    return hosts.length > 0
+  }
+  const remote = parseRemoteSelection(id)
+  return remote !== null && hosts.some((host) => host.id === remote.hostId)
+}

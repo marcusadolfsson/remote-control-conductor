@@ -126,19 +126,29 @@ type WorkspaceProps = {
    */
   onOpenAbout: () => void
   /**
+   * What the paired servers add: nothing much while there are none.
+   */
+  remote: WorkspaceRemote
+}
+
+/**
+ * What the paired servers add to the workspace.
+ */
+export type WorkspaceRemote = {
+  /**
    * Sections the sidebar shows below this Mac's profiles, for its filter
    * query: Remote Control and each paired server.
    */
-  renderExtraSections?: (query: string) => Array<ReactNode>
+  renderSections: (query: string) => Array<ReactNode>
   /**
    * Whether the sidebar marks every profile with its app's glyph.
    */
-  alwaysShowAppGlyphs?: boolean
+  alwaysShowAppGlyphs: boolean
   /**
    * Panes for selections outside the sidebar entries, each showing itself
    * when it is selected and the profile side is up.
    */
-  extraPanes?: ReactNode
+  panes: ReactNode
 }
 
 /**
@@ -160,24 +170,11 @@ export function Workspace({
   onDelete,
   onOpenMigration,
   onOpenAbout,
-  renderExtraSections,
-  alwaysShowAppGlyphs,
-  extraPanes,
+  remote,
 }: WorkspaceProps) {
   const detailVisible = rightPane === 'profile' && selected !== null
 
-  // ⌘F focuses the sidebar profile-filter input. Registered here so it only
-  // exists while the sidebar is mounted (empty-state owns the whole window
-  // with no sidebar).
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  useShortcut(
-    'focus-search',
-    () => {
-      searchInputRef.current?.focus()
-      searchInputRef.current?.select()
-    },
-    { enabled: searchShortcutEnabled },
-  )
+  const searchInputRef = useFocusSearchShortcut(searchShortcutEnabled)
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -189,8 +186,8 @@ export function Workspace({
         onCreate={onCreate}
         onSettings={() => onRightPaneChange('settings')}
         onReorder={onReorder}
-        alwaysShowAppGlyphs={alwaysShowAppGlyphs}
-        renderExtraSections={renderExtraSections}
+        alwaysShowAppGlyphs={remote.alwaysShowAppGlyphs}
+        renderExtraSections={remote.renderSections}
       />
       {/* Activity keeps the off-screen pane mounted so toggling gear ↔ profile
           never re-fetches dependencies/backups or re-runs profile-detail effects.
@@ -206,20 +203,66 @@ export function Workspace({
           onMigrate={onOpenMigration}
         />
       </Activity>
-      {extraPanes}
+      {remote.panes}
       <Activity mode={rightPane === 'settings' ? 'visible' : 'hidden'}>
-        <Suspense fallback={<SettingsViewSkeleton />}>
-          <QueryErrorBoundary>
-            <SettingsView
-              onClose={() => onRightPaneChange('profile')}
-              onOpenMigration={(app) => {
-                void onOpenMigration(app)
-              }}
-              onOpenAbout={onOpenAbout}
-            />
-          </QueryErrorBoundary>
-        </Suspense>
+        <SettingsPane
+          onClose={() => onRightPaneChange('profile')}
+          onOpenMigration={onOpenMigration}
+          onOpenAbout={onOpenAbout}
+        />
       </Activity>
     </div>
+  )
+}
+
+/**
+ * ⌘F focuses the sidebar profile-filter input, through the ref this returns.
+ * Registered by the workspace so it only exists while the sidebar is mounted
+ * (empty-state owns the whole window with no sidebar).
+ */
+function useFocusSearchShortcut(enabled: boolean) {
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  useShortcut(
+    'focus-search',
+    () => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    },
+    { enabled },
+  )
+  return searchInputRef
+}
+
+type SettingsPaneProps = {
+  /**
+   * Goes back to the selected entry's detail.
+   */
+  onClose: () => void
+  /**
+   * Opens the import dialog for an app.
+   */
+  onOpenMigration: (app: AppId) => Promise<void>
+  /**
+   * Opens the About dialog.
+   */
+  onOpenAbout: () => void
+}
+
+/**
+ * Settings, loading behind its skeleton.
+ */
+function SettingsPane({ onClose, onOpenMigration, onOpenAbout }: SettingsPaneProps) {
+  return (
+    <Suspense fallback={<SettingsViewSkeleton />}>
+      <QueryErrorBoundary>
+        <SettingsView
+          onClose={onClose}
+          onOpenMigration={(app) => {
+            void onOpenMigration(app)
+          }}
+          onOpenAbout={onOpenAbout}
+        />
+      </QueryErrorBoundary>
+    </Suspense>
   )
 }

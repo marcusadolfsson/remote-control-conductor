@@ -12,6 +12,8 @@ import { useRemoteHostInfo, useRemoteHosts, useRemoveHost, useRenameHost } from 
 import { PairHostDialog } from '@/features/remote/components/pair-host-dialog'
 import { copyToClipboard } from '@/lib/commands'
 
+import { hostStatus } from '../lib/host-status'
+
 const headingClasses = 'font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-muted-strong'
 
 /**
@@ -165,15 +167,7 @@ export function CopyLine({ text }: { text: string }) {
 
 function HostRow({ host, onRename, onRemove }: { host: RemoteHost; onRename: () => void; onRemove: () => void }) {
   const info = useRemoteHostInfo(host.id)
-  const tone = info.isError ? 'danger' : info.isSuccess ? 'success' : 'neutral'
-  const status = info.isError
-    ? sessionErrorMessage(info.error, 'Not answering.')
-    : info.data
-      ? [
-          info.data.claude?.version ? `Claude ${info.data.claude.version.split(' ')[0]}` : 'no claude',
-          info.data.tmux?.version ?? 'no tmux',
-        ].join(' · ')
-      : 'Checking…'
+  const { tone, line: status } = hostStatus(info)
   return (
     <div className="grid grid-cols-[7px_1fr_auto] items-center gap-3 border-b border-border-soft px-4 py-3 text-[13px] tracking-[-0.003em] text-ink-soft last:border-b-0">
       <StatusDot tone={tone} pulse={info.isSuccess} />
