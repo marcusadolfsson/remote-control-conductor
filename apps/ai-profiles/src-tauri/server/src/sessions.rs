@@ -4,44 +4,78 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use ai_profiles_core::api::{RemoteSession, TmuxWindow};
 use ai_profiles_core::registry::{read_registry, RegistryEntry};
-use ai_profiles_core::transcript::{read_transcript, transcripts, TranscriptInfo};
+use ai_profiles_core::transcript::{
+    read_transcript, read_transcript_from, transcripts, TranscriptInfo,
+};
 
 use crate::accounts::AccountDir;
 use crate::procs::ProcessTable;
 
-/// Parsed transcripts, keyed by path and valid while the file's mtime and
-/// size are unchanged: listing reads every transcript, and most don't change
-/// between two lists.
+/// Parsed transcripts, keyed by path: listing reads every transcript, and
+/// most don't change between two lists. One that did usually grew, as a
+/// running session's does (to hundreds of megabytes), so only what was
+/// appended is read. One that was replaced (moves write a new file and rename
+/// it over), shrank or changed before the end of what was read is read again
+/// in full.
 #[derive(Default)]
-pub struct TranscriptCache(Mutex<HashMap<PathBuf, (SystemTime, u64, TranscriptInfo)>>);
+pub struct TranscriptCache(Mutex<HashMap<PathBuf, Cached>>);
+
+struct Cached {
+    inode: u64,
+    modified: SystemTime,
+    size: u64,
+    /// Where the next read goes on from: the end of the last complete line.
+    offset: u64,
+    info: TranscriptInfo,
+}
 
 impl TranscriptCache {
-    /// What the transcript at `path` says, read again only once it changed.
-    pub fn info(&self, path: &std::path::Path) -> Option<TranscriptInfo> {
-        let metadata = std::fs::metadata(path).ok()?;
-        self.read(
-            &path.to_path_buf(),
-            metadata.modified().ok()?,
-            metadata.len(),
-        )
+    /// What the transcript at `path` says, reading only what changed.
+    pub fn info(&self, path: &Path) -> Option<TranscriptInfo> {
+        self.read(path, &fs::metadata(path).ok()?)
     }
 
-    fn read(&self, path: &PathBuf, modified: SystemTime, size: u64) -> Option<TranscriptInfo> {
-        if let Some((cached_at, cached_size, info)) = self.0.lock().ok()?.get(path) {
-            if *cached_at == modified && *cached_size == size {
-                return Some(info.clone());
+    fn read(&self, path: &Path, metadata: &fs::Metadata) -> Option<TranscriptInfo> {
+        let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+        let (inode, size) = (metadata.ino(), metadata.len());
+        let gzipped = path.extension().is_some_and(|ext| ext == "gz");
+        let known = self.0.lock().ok()?.remove(path);
+        let (info, offset) = match known {
+            Some(cached)
+                if cached.inode == inode && cached.modified == modified && cached.size == size =>
+            {
+                (cached.info, cached.offset)
             }
-        }
-        let info = read_transcript(path).ok()?;
+            // Read on from where the last read stopped, unless the file
+            // turns out to have changed before there.
+            Some(cached) if !gzipped && cached.inode == inode && cached.offset <= size => {
+                match read_transcript_from(path, cached.info, cached.offset) {
+                    Ok(read) => read,
+                    Err(_) => read_transcript_from(path, TranscriptInfo::default(), 0).ok()?,
+                }
+            }
+            _ if gzipped => (read_transcript(path).ok()?, size),
+            _ => read_transcript_from(path, TranscriptInfo::default(), 0).ok()?,
+        };
         if let Ok(mut cache) = self.0.lock() {
-            cache.insert(path.clone(), (modified, size, info.clone()));
+            cache.insert(
+                path.to_path_buf(),
+                Cached {
+                    inode,
+                    modified,
+                    size,
+                    offset,
+                    info: info.clone(),
+                },
+            );
         }
         Some(info)
     }
@@ -123,7 +157,7 @@ pub fn list(
             continue;
         };
         let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-        let Some(info) = cache.read(&path, modified, metadata.len()) else {
+        let Some(info) = cache.read(&path, &metadata) else {
             continue;
         };
         let live = running.get(&id);
@@ -384,6 +418,36 @@ mod tests {
             "{\"type\":\"user\"}\n{\"type\":\"assistant\"}\n",
         );
         assert_eq!(list(&account, &processes, &cache).len(), 3);
+    }
+
+    #[test]
+    fn the_cache_reads_on_in_a_growing_transcript_and_again_in_a_replaced_one() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        write(&path, "{\"type\":\"user\",\"cwd\":\"/a\"}\n");
+        let cache = TranscriptCache::default();
+        assert_eq!(cache.info(&path).unwrap().cwd.as_deref(), Some("/a"));
+
+        // Claude appends.
+        let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
+        file.write_all(b"{\"type\":\"custom-title\",\"customTitle\":\"Named\"}\n")
+            .unwrap();
+        let info = cache.info(&path).unwrap();
+        assert_eq!(info.cwd.as_deref(), Some("/a"));
+        assert_eq!(info.title().as_deref(), Some("Named"));
+
+        // A move writes a new file and renames it over: nothing of the old
+        // one is kept, though the new one is longer.
+        let part = dir.path().join("s.jsonl.part");
+        write(
+            &part,
+            "{\"type\":\"user\",\"cwd\":\"/moved/somewhere/else/entirely\"}\n{\"type\":\"assistant\"}\n",
+        );
+        fs::rename(&part, &path).unwrap();
+        let info = cache.info(&path).unwrap();
+        assert_eq!(info.cwd.as_deref(), Some("/moved/somewhere/else/entirely"));
+        assert_eq!(info.title(), None);
     }
 
     /// Claude listing an account's live sessions itself.

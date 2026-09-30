@@ -203,6 +203,8 @@ fn serve_forever(config: Config, paths: &Paths) -> io::Result<()> {
         // After a reboot, bring back what was running; from then on, keep
         // writing down what is. In the background: the server answers
         // meanwhile.
+        let warming = state.clone();
+        tokio::task::spawn_blocking(move || warming.warm_up());
         let background = state.clone();
         tokio::spawn(async move {
             let reviving = background.clone();

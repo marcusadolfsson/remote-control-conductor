@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -73,35 +73,92 @@ struct Line {
 pub fn read_transcript(path: &Path) -> io::Result<TranscriptInfo> {
     let file = fs::File::open(path)?;
     // An archived transcript is kept gzipped.
-    let reader: Box<dyn BufRead> = if path.extension().is_some_and(|ext| ext == "gz") {
-        Box::new(BufReader::new(flate2::read::GzDecoder::new(file)))
-    } else {
-        Box::new(BufReader::new(file))
-    };
-    let mut info = TranscriptInfo::default();
-    for line in reader.lines() {
-        let line = line?;
-        let Ok(parsed) = serde_json::from_str::<Line>(&line) else {
-            continue;
-        };
-        match parsed.kind.as_deref() {
-            Some("assistant") => info.has_reply = true,
-            Some("custom-title") => info.custom_title = parsed.custom_title.or(info.custom_title),
-            Some("ai-title") => info.ai_title = parsed.ai_title.or(info.ai_title),
-            Some("last-prompt") => info.last_prompt = parsed.last_prompt.or(info.last_prompt),
-            _ => {}
+    if path.extension().is_some_and(|ext| ext == "gz") {
+        let mut info = TranscriptInfo::default();
+        for line in BufReader::new(flate2::read::GzDecoder::new(file)).lines() {
+            apply(&mut info, line?.as_bytes());
         }
-        if parsed.cwd.is_some() {
-            info.cwd = parsed.cwd;
-        }
-        if let Some(slug) = parsed.slug.filter(|slug| is_safe_name(slug)) {
-            info.slugs.insert(slug);
-        }
-        if info.first_timestamp.is_none() {
-            info.first_timestamp = parsed.timestamp;
+        return Ok(info);
+    }
+    read_on(file, TranscriptInfo::default()).map(|(info, _)| info)
+}
+
+/// Read on in a transcript Claude is still appending to: `info` is what the
+/// first `offset` bytes of it said (as [`read_transcript_from`] returned
+/// them), and only what was written after is read. A plain `.jsonl` only.
+///
+/// Returns what the whole transcript says, and the offset to read on from
+/// next time: the end of its last complete line. A last line still being
+/// written counts if it already reads as JSON, and is read again once
+/// finished, which changes nothing, since reading a line twice in a row
+/// leaves the same result.
+///
+/// Fails with `InvalidData` when `offset` isn't just past a newline: the
+/// file isn't the one `info` was read from, and needs reading in full.
+pub fn read_transcript_from(
+    path: &Path,
+    info: TranscriptInfo,
+    offset: u64,
+) -> io::Result<(TranscriptInfo, u64)> {
+    let mut file = fs::File::open(path)?;
+    if offset > 0 {
+        file.seek(SeekFrom::Start(offset - 1))?;
+        let mut before = [0u8];
+        file.read_exact(&mut before)?;
+        if before != *b"\n" {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "the transcript changed before where it was read to",
+            ));
         }
     }
-    Ok(info)
+    let (info, read) = read_on(file, info)?;
+    Ok((info, offset + read))
+}
+
+/// Apply every line from where `file` is, and say how many bytes the
+/// complete ones (ending in a newline) took.
+fn read_on(file: fs::File, mut info: TranscriptInfo) -> io::Result<(TranscriptInfo, u64)> {
+    let mut reader = BufReader::with_capacity(1 << 16, file);
+    let mut line = Vec::new();
+    let mut complete = 0u64;
+    loop {
+        line.clear();
+        let read = reader.read_until(b'\n', &mut line)?;
+        if read == 0 {
+            break;
+        }
+        apply(&mut info, &line);
+        if line.last() == Some(&b'\n') {
+            complete += read as u64;
+        }
+    }
+    Ok((info, complete))
+}
+
+/// What one transcript line adds to `info`.
+fn apply(info: &mut TranscriptInfo, line: &[u8]) {
+    let Ok(parsed) = serde_json::from_slice::<Line>(line) else {
+        return;
+    };
+    match parsed.kind.as_deref() {
+        Some("assistant") => info.has_reply = true,
+        Some("custom-title") => {
+            info.custom_title = parsed.custom_title.or(info.custom_title.take())
+        }
+        Some("ai-title") => info.ai_title = parsed.ai_title.or(info.ai_title.take()),
+        Some("last-prompt") => info.last_prompt = parsed.last_prompt.or(info.last_prompt.take()),
+        _ => {}
+    }
+    if parsed.cwd.is_some() {
+        info.cwd = parsed.cwd;
+    }
+    if let Some(slug) = parsed.slug.filter(|slug| is_safe_name(slug)) {
+        info.slugs.insert(slug);
+    }
+    if info.first_timestamp.is_none() {
+        info.first_timestamp = parsed.timestamp;
+    }
 }
 
 /// The first line of `text`, trimmed, cut to a title's length on a character
@@ -206,6 +263,75 @@ mod tests {
             info.slugs.into_iter().collect::<Vec<_>>(),
             vec!["bold-plan".to_string()]
         );
+    }
+
+    #[test]
+    fn reading_on_from_an_offset_reads_as_the_whole_file_would() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        let first = concat!(
+            r#"{"type":"user","cwd":"/a","timestamp":"2026-01-01T00:00:00Z"}"#,
+            "\n",
+            r#"{"type":"ai-title","aiTitle":"First"}"#,
+            "\n",
+        );
+        // The last line is still being written.
+        write(
+            &path,
+            &format!("{first}{{\"type\":\"assistant\",\"slug\":\"pl"),
+        );
+        let (info, offset) = read_transcript_from(&path, TranscriptInfo::default(), 0).unwrap();
+        assert_eq!(offset, first.len() as u64);
+        assert!(!info.has_reply);
+        assert_eq!(info.ai_title.as_deref(), Some("First"));
+
+        let rest = concat!(
+            r#"{"type":"assistant","slug":"plan"}"#,
+            "\n",
+            r#"{"type":"user","cwd":"/b","timestamp":"2026-01-02T00:00:00Z"}"#,
+            "\n",
+            r#"{"type":"custom-title","customTitle":"Mine"}"#,
+            "\n",
+        );
+        write(&path, &format!("{first}{rest}"));
+        let (info, offset) = read_transcript_from(&path, info, offset).unwrap();
+        assert_eq!(offset, (first.len() + rest.len()) as u64);
+        let whole = read_transcript(&path).unwrap();
+        for info in [&info, &whole] {
+            assert!(info.has_reply);
+            assert_eq!(info.cwd.as_deref(), Some("/b"));
+            assert_eq!(info.title().as_deref(), Some("Mine"));
+            assert_eq!(
+                info.first_timestamp.as_deref(),
+                Some("2026-01-01T00:00:00Z")
+            );
+            assert_eq!(info.slugs.iter().collect::<Vec<_>>(), vec!["plan"]);
+        }
+    }
+
+    #[test]
+    fn a_last_line_already_whole_counts_before_its_newline() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        write(&path, r#"{"type":"last-prompt","lastPrompt":"go"}"#);
+        let (info, offset) = read_transcript_from(&path, TranscriptInfo::default(), 0).unwrap();
+        assert_eq!(info.last_prompt.as_deref(), Some("go"));
+        assert_eq!(offset, 0);
+        assert_eq!(
+            read_transcript(&path).unwrap().last_prompt.as_deref(),
+            Some("go")
+        );
+    }
+
+    #[test]
+    fn reading_on_refuses_a_file_that_changed_before_the_offset() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        write(&path, "{\"type\":\"user\"}\n");
+        let (info, offset) = read_transcript_from(&path, TranscriptInfo::default(), 0).unwrap();
+        write(&path, "{\"type\":\"assistant\",\"cwd\":\"/x\"}\n");
+        let error = read_transcript_from(&path, info, offset).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     }
 
     #[test]

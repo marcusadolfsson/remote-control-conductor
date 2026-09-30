@@ -14,7 +14,7 @@ use ai_profiles_core::api::{
     TransferReport, TransferRequest, WindowKey, WindowKeysRequest, WindowScreen, API_HEADER,
     API_VERSION,
 };
-use ai_profiles_core::transcript::{read_transcript, transcripts};
+use ai_profiles_core::transcript::transcripts;
 use axum::extract::{DefaultBodyLimit, Path as UrlPath, Query, Request, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
@@ -78,6 +78,16 @@ impl ServerState {
             state_dir: state_dir.to_path_buf(),
             installed_claude: Default::default(),
             config,
+        }
+    }
+
+    /// Read every account's transcripts once, so the first list after a
+    /// start finds them in the cache: a long-running session's can be
+    /// hundreds of megabytes, which a host short on memory reads from disk
+    /// slower than the app waits.
+    pub fn warm_up(&self) {
+        for account in accounts::discover(&self.config) {
+            sessions::list(&account, self.processes.as_ref(), &self.transcripts);
         }
     }
 
@@ -910,7 +920,10 @@ pub(crate) fn resume_held(
         .find(|(_, session, _)| *session == id)
         .ok_or_else(|| ApiError::not_found("There is no session with that id."))?;
     let claude = launch_tools(state)?;
-    let info = read_transcript(&transcript)?;
+    let info = state
+        .transcripts
+        .info(&transcript)
+        .ok_or_else(|| ApiError::internal("Its transcript couldn't be read."))?;
     let cwd = info
         .cwd
         .as_deref()
