@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use crate::memory::{self, MemoryReport};
-use crate::session_move::{self, Item, MoveError};
+use crate::memory::{self, Backups, MemoryReport};
+use crate::session_move::{self, Item, Journal, MoveError};
 use ai_profiles_core::api::{
     ArchivedSession, RunningMatch, TmuxWindow, TransferItem, TransferMemoryFile, TransferPlan,
 };
@@ -306,36 +306,52 @@ pub fn transfer(
 
     let id = &plan.session_id;
     let backup_root = session_move::backup_root(&prepared.destination.dir, id, stamp);
-    let mut backed_up =
-        session_move::apply_items(&prepared.items, &backup_root).map_err(ApiError::internal)?;
-    let report = if prepared.source_memory.is_dir() {
-        memory::apply_memory(
-            &prepared.source_memory,
-            &prepared.destination_memory,
-            &prepared.memory_base,
-            &prepared.destination.dir,
-            &backup_root,
-            decisions,
-            (&prepared.source.name, &prepared.destination.name),
-        )
-        .map_err(ApiError::internal)?
-    } else {
-        MemoryReport::default()
-    };
-    backed_up |= report.backed_up;
-    let archived_to = if afterwards == Afterwards::Archive {
-        Some(
-            session_move::archive_transcript(
+    // The files, the memory, then archiving the source: a step that fails
+    // takes back what the ones before it did at the destination.
+    let mut journal = Journal::default();
+    let steps = (|| -> std::io::Result<(bool, MemoryReport, Option<String>)> {
+        let mut backed_up = session_move::apply_items(&prepared.items, &backup_root, &mut journal)?;
+        let report = if prepared.source_memory.is_dir() {
+            memory::apply_memory(
+                &prepared.source_memory,
+                &prepared.destination_memory,
+                &prepared.memory_base,
+                &Backups {
+                    account_dir: &prepared.destination.dir,
+                    root: &backup_root,
+                },
+                decisions,
+                (&prepared.source.name, &prepared.destination.name),
+                &mut journal,
+            )?
+        } else {
+            MemoryReport::default()
+        };
+        backed_up |= report.backed_up;
+        let archived_to = if afterwards == Afterwards::Archive {
+            let archived = session_move::archive_transcript(
                 &prepared.source.dir,
                 &prepared.source_transcript,
                 stamp,
-            )
-            .map_err(ApiError::internal)?
-            .display()
-            .to_string(),
-        )
-    } else {
-        None
+            )?;
+            Some(archived.display().to_string())
+        } else {
+            None
+        };
+        Ok((backed_up, report, archived_to))
+    })();
+    let (backed_up, report, archived_to) = match steps {
+        Ok(done) => done,
+        Err(err) => {
+            let undone = backup_root.join(UNDONE_DIR);
+            let stranded = journal.undo(&prepared.destination.dir, &undone);
+            return Err(ApiError::internal(taken_back(
+                &err,
+                &prepared.destination.name,
+                &undone,
+                &stranded,
+            )));
+        }
     };
     let (freed_bytes, delete_error) = if afterwards == Afterwards::Delete {
         match session_move::delete_source(&prepared.items) {
@@ -362,6 +378,29 @@ pub fn transfer(
         memory: report.lines,
         archived_to,
     })
+}
+
+/// Where, in a move's backup folder, what a move that failed had put at the
+/// destination is set aside when it's taken back.
+const UNDONE_DIR: &str = "undone";
+
+/// What a move that failed with `err` says, once what it did at
+/// `destination` was taken back: set aside into `undone`, with what it
+/// replaced put back, except `stranded`.
+fn taken_back(
+    err: &std::io::Error,
+    destination: &str,
+    undone: &Path,
+    stranded: &[String],
+) -> String {
+    let mut message = format!(
+        "The move stopped: {err}. What it had done in {destination} was taken back, and what it had put there is in {}.",
+        undone.display()
+    );
+    if !stranded.is_empty() {
+        message.push_str(&format!(" Except: {}.", stranded.join("; ")));
+    }
+    message
 }
 
 /// Ask Claude, under `destination`, to merge the two versions of memory note

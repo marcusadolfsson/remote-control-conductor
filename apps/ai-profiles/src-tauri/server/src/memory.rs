@@ -30,7 +30,7 @@ use std::process::Command;
 
 use ai_profiles_core::api::{Decision, MemoryAction, Side};
 
-use crate::session_move::{copy_any, write_into_place};
+use crate::session_move::{place_bytes, place_copy, Journal};
 
 /// Where the common versions live, relative to the accounts folder.
 pub const BASE_DIR: &str = ".claudemulti/memory-base";
@@ -111,18 +111,33 @@ pub fn plan_memory(source: &Path, destination: &Path, base: &Path) -> Vec<Memory
         .collect()
 }
 
+/// Where a move backs up what it replaces in an account: in `root`, at its
+/// path relative to `account_dir`.
+pub struct Backups<'a> {
+    pub account_dir: &'a Path,
+    pub root: &'a Path,
+}
+
+impl Backups<'_> {
+    fn path_for(&self, path: &Path) -> PathBuf {
+        self.root
+            .join(path.strip_prefix(self.account_dir).unwrap_or(path))
+    }
+}
+
 /// Merge `source` memory into `destination`, as [`plan_memory`] plans it,
 /// with `decisions` for its conflicts, keyed by path. Destination files
-/// that change are backed up under `backup_root`, at their path relative to
-/// `account_dir`. `labels` name the two accounts in the report.
+/// that change are backed up in `backups`, and every change is logged in
+/// `journal`, so a move that fails later can take it back. `labels` name the
+/// two accounts in the report.
 pub fn apply_memory(
     source: &Path,
     destination: &Path,
     base: &Path,
-    account_dir: &Path,
-    backup_root: &Path,
+    backups: &Backups,
     decisions: &HashMap<String, Decision>,
     labels: (&str, &str),
+    journal: &mut Journal,
 ) -> io::Result<MemoryReport> {
     let (source_label, destination_label) = labels;
     let plan = plan_memory(source, destination, base);
@@ -142,10 +157,7 @@ pub fn apply_memory(
         let (from, to) = (source.join(rel), destination.join(rel));
         let result: Option<Vec<u8>> = match file.action {
             MemoryAction::Add => {
-                if let Some(parent) = to.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                copy_any(&from, &to)?;
+                place_copy(&from, &to, &backups.path_for(&to), journal)?;
                 report.lines.push(format!("added    memory/{rel}"));
                 None
             }
@@ -195,14 +207,7 @@ pub fn apply_memory(
 
         if let Some(result) = result {
             if fs::read(&to).ok().as_deref() != Some(result.as_slice()) {
-                let backup = backup_root.join(to.strip_prefix(account_dir).unwrap_or(&to));
-                if let Some(parent) = backup.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                let _ = fs::remove_file(&backup);
-                copy_any(&to, &backup)?;
-                report.backed_up = true;
-                write_into_place(&to, &result)?;
+                report.backed_up |= place_bytes(&result, &to, &backups.path_for(&to), journal)?;
             }
         }
 
@@ -442,7 +447,19 @@ mod tests {
 
         let backup = account.join("session-transfer-backups/s/1");
         let partial = HashMap::from([("clash.md".to_string(), Decision::Source)]);
-        assert!(apply_memory(&src, &dst, &base, &account, &backup, &partial, ("a", "b")).is_err());
+        assert!(apply_memory(
+            &src,
+            &dst,
+            &base,
+            &Backups {
+                account_dir: &account,
+                root: &backup
+            },
+            &partial,
+            ("a", "b"),
+            &mut Journal::default()
+        )
+        .is_err());
 
         let decisions = HashMap::from([
             ("clash.md".to_string(), Decision::Source),
@@ -451,8 +468,19 @@ mod tests {
                 Decision::Merged("both\n".to_string()),
             ),
         ]);
-        let report =
-            apply_memory(&src, &dst, &base, &account, &backup, &decisions, ("a", "b")).unwrap();
+        let report = apply_memory(
+            &src,
+            &dst,
+            &base,
+            &Backups {
+                account_dir: &account,
+                root: &backup,
+            },
+            &decisions,
+            ("a", "b"),
+            &mut Journal::default(),
+        )
+        .unwrap();
         assert!(report.backed_up);
         assert_eq!(
             fs::read_to_string(dst.join("clean.md")).unwrap(),
