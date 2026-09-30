@@ -104,11 +104,6 @@ jobs:
         if: github.event_name == 'pull_request'
         run: pnpm fallow audit --base origin/${{ github.base_ref }} --quiet
 
-      # Split so health can go by the fork's complexity baseline, which the
-      # combined run doesn't take.
       - name: fallow (full)
         if: github.event_name == 'push'
-        run: |
-          pnpm fallow dead-code --quiet
-          pnpm fallow dupes --quiet
-          pnpm fallow health --quiet --baseline fallow-health-baseline.json
+        run: pnpm fallow --quiet

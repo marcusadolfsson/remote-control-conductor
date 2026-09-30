@@ -1,5 +1,6 @@
 import type { ProfileEditInput } from '@/features/profiles/lib/plan-profile-edit'
-import type { Profile, RemoteHost } from '@/lib/types'
+import type { Profile } from '@/lib/types'
+import type { NewRemoteProfile } from './use-new-remote-profile'
 
 import { useState } from 'react'
 
@@ -38,29 +39,16 @@ type Props = {
    */
   onCreated: (profileId: string) => void
   /**
-   * Paired servers, where the create dialog can make a Claude CLI Remote profile.
+   * Offers the create dialog's Claude CLI Remote type, when set.
    */
-  remoteHosts?: Array<RemoteHost>
-  /**
-   * Makes a profile on a server. Resolves once it exists there.
-   */
-  onCreateRemote?: (input: { hostId: string; name: string; color: string }) => Promise<void>
+  remote?: NewRemoteProfile
 }
 
 /**
  * The create, edit and delete profile dialogs, and the saves behind them.
  * Edit and delete mount only while a managed profile is selected.
  */
-export function ProfileDialogs({
-  createOpen,
-  editOpen,
-  deleteOpen,
-  profile,
-  onClose,
-  onCreated,
-  remoteHosts,
-  onCreateRemote,
-}: Props) {
+export function ProfileDialogs({ createOpen, editOpen, deleteOpen, profile, onClose, onCreated, remote }: Props) {
   const profiles = useProfiles()
   const dependencies = useDependencies()
   const appState = useAppState()
@@ -112,8 +100,7 @@ export function ProfileDialogs({
         // Fresh each time it opens, so it starts empty again.
         key={createOpen ? 'open' : 'closed'}
         open={createOpen}
-        remoteHosts={remoteHosts}
-        onCreateRemote={onCreateRemote}
+        remote={remote}
         dependencies={dependencies.deps}
         dockIconAcknowledged={dockIconAcknowledged}
         submitting={submitting}

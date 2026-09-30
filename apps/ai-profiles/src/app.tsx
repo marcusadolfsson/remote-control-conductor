@@ -171,10 +171,12 @@ function AppContent() {
         profile={managedSelected}
         onClose={closeDialog}
         onCreated={selection.select}
-        remoteHosts={remote.hosts}
-        onCreateRemote={async (input) => {
-          selectEntry(await remote.createProfile(input))
-          remote.setSigningIn({ hostId: input.hostId, account: input.name })
+        remote={{
+          hosts: remote.hosts,
+          onCreate: async (input) => {
+            selectEntry(await remote.createProfile(input))
+            remote.setSigningIn({ hostId: input.hostId, account: input.name })
+          },
         }}
       />
 

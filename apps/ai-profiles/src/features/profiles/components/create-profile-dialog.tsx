@@ -1,26 +1,25 @@
-import type { AppId, Dependencies, RemoteHost, Surfaces } from '@/lib/types'
+import type { AppId, Dependencies, Surfaces } from '@/lib/types'
+import type { NewRemoteProfile } from './use-new-remote-profile'
 
 import { useState } from 'react'
 
 import { Dialog, useToast } from '@/design'
-// cross-feature: a remote profile's name has to be free on its server
-import { useRemoteAccounts } from '@/features/remote/api/use-remote'
-import { isValidHexColor, presetColors } from '@/lib/colors'
+import { presetColors } from '@/lib/colors'
 import { extractErrorMessage } from '@/lib/extract-error-message'
 
+import { createDescription, initialProfileType, localAppOf } from '../lib/new-profile-type'
 import {
   availableSurfaces,
   effectiveSurfaces,
   installedAppIds,
   isProfileFormValid,
   newProfileDockIcon,
-  preselectedApp,
 } from '../lib/profile-form'
-import { isValidRemoteProfileName } from '../lib/remote-profile-name'
 import { DockIconConsentDialog } from './dock-icon-consent-dialog'
 import { ProfileDialogFoot } from './profile-dialog-foot'
 import { ProfileFormFields, type ProfileType, remoteType } from './profile-form-fields'
 import { useDockIconConsent } from './use-dock-icon-consent'
+import { useNewRemoteProfile } from './use-new-remote-profile'
 
 type Props = {
   open: boolean
@@ -42,12 +41,10 @@ type Props = {
     surfaces: Surfaces
     distinctDockIcon: boolean
   }) => Promise<void>
-  /** Paired servers, where a Claude CLI Remote profile can be made. */
-  remoteHosts?: Array<RemoteHost>
-  /** Open on the remote type, on this server. */
-  initialRemoteHostId?: string
-  /** Make a profile on a server. Resolves once it exists there. */
-  onCreateRemote?: (input: { hostId: string; name: string; color: string }) => Promise<void>
+  /**
+   * Offers a profile on a paired server too, when set.
+   */
+  remote?: NewRemoteProfile
 }
 
 export function CreateProfileDialog({
@@ -58,9 +55,7 @@ export function CreateProfileDialog({
   onClose,
   onAcknowledgeDockIcon,
   onCreate,
-  remoteHosts = [],
-  initialRemoteHostId,
-  onCreateRemote,
+  remote,
 }: Props) {
   const toast = useToast()
   const [name, setName] = useState('')
@@ -71,24 +66,15 @@ export function CreateProfileDialog({
   const [dockIconChoice, setDockIconChoice] = useState<boolean | null>(null)
 
   const installedApps = installedAppIds(dependencies)
-  const defaultApp: ProfileType = initialRemoteHostId !== undefined ? remoteType : preselectedApp(installedApps)
+  const defaultApp = initialProfileType(remote?.initialHostId, installedApps)
   const [app, setApp] = useState<ProfileType>(defaultApp)
-  const [hostId, setHostId] = useState<string>(initialRemoteHostId ?? remoteHosts[0]?.id ?? '')
-  const remote = app === remoteType
   // The app on this Mac, or none for a profile on a server.
-  const localApp = remote ? '' : app
-  // Names on the chosen server, to say before creating that one is taken.
-  const serverProfiles = useRemoteAccounts(hostId, remote && hostId !== '')
-  const takenOnServer =
-    remote && (serverProfiles.data ?? []).some((account) => account.name.toLowerCase() === name.trim().toLowerCase())
+  const localApp = localAppOf(app)
+  const onServer = useNewRemoteProfile(remote, app === remoteType, name, color)
 
   const effective = effectiveSurfaces(surfaces, availableSurfaces(dependencies, localApp))
-  const canSubmit = remote
-    ? remoteHosts.some((host) => host.id === hostId) &&
-      isValidRemoteProfileName(name.trim()) &&
-      !takenOnServer &&
-      isValidHexColor(color)
-    : localApp !== '' && isProfileFormValid(name, color, effective)
+  // No app chosen leaves no surface to have, so the form isn't valid then.
+  const canSubmit = app === remoteType ? onServer.valid : isProfileFormValid(name, color, effective)
 
   const dockIcon = newProfileDockIcon(dockIconChoice, localApp, dockIconAcknowledged, effective.gui)
   const dockIconConsent = useDockIconConsent({
@@ -101,9 +87,9 @@ export function CreateProfileDialog({
     if (!canSubmit || submitting) {
       return
     }
-    if (remote) {
+    if (app === remoteType) {
       try {
-        await onCreateRemote?.({ hostId, name: name.trim(), color })
+        await remote?.onCreate({ hostId: onServer.hostId, name: name.trim(), color })
         setName('')
         setColor(presetColors[0])
         setApp(defaultApp)
@@ -139,11 +125,7 @@ export function CreateProfileDialog({
       <Dialog
         open={open}
         title="New profile"
-        description={
-          remote
-            ? 'A profile on a server: Claude runs there, in tmux, with Remote Control, signed in as its own account.'
-            : 'A profile bundles a Desktop launcher and a CLI wrapper. Pick a name and color; everything else stays isolated.'
-        }
+        description={createDescription(app)}
         closeOnOutsideClick={false}
         onClose={onClose}
         onSubmit={handleSubmit}
@@ -167,9 +149,7 @@ export function CreateProfileDialog({
           dependencies={dependencies}
           installedApps={installedApps}
           onAppChange={setApp}
-          remote={
-            onCreateRemote ? { hosts: remoteHosts, hostId, onHostChange: setHostId, taken: takenOnServer } : undefined
-          }
+          remote={onServer.fields}
           onNameChange={setName}
           onColorChange={setColor}
           onSurfacesChange={setSurfaces}
@@ -179,14 +159,25 @@ export function CreateProfileDialog({
       </Dialog>
       {/* A sibling rather than a child, so keys pressed in it are not taken for
           keys pressed in the form underneath. */}
-      {localApp !== '' ? (
-        <DockIconConsentDialog
-          open={dockIconConsent.open}
-          app={localApp}
-          onClose={dockIconConsent.cancel}
-          onConfirm={dockIconConsent.asking ? dockIconConsent.confirm : undefined}
-        />
-      ) : null}
+      <ConsentForApp app={localApp} consent={dockIconConsent} />
     </>
+  )
+}
+
+/**
+ * The Dock icon's explanation, or its question, for the app chosen; none
+ * before one is, or for a profile on a server.
+ */
+function ConsentForApp({ app, consent }: { app: AppId | ''; consent: ReturnType<typeof useDockIconConsent> }) {
+  if (app === '') {
+    return null
+  }
+  return (
+    <DockIconConsentDialog
+      open={consent.open}
+      app={app}
+      onClose={consent.cancel}
+      onConfirm={consent.asking ? consent.confirm : undefined}
+    />
   )
 }
