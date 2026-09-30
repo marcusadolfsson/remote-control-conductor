@@ -336,8 +336,11 @@ export type HostInfo = {
   claude: { path: string; version: string | null } | null
   accountsBase: string
   includesDefault: boolean
-  /** What the server was set to do, from any Mac paired with it. */
-  settings: HostSettings
+  /**
+   * What the server was set to do, from any Mac paired with it. `null` from a
+   * server too old to have settings.
+   */
+  settings: HostSettings | null
 }
 
 /** A server's own settings, changed from the app. */

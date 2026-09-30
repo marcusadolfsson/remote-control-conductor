@@ -84,7 +84,7 @@ pub fn host_info(config: &Config, settings: HostSettings) -> HostInfo {
         }),
         accounts_base: config.accounts_base.display().to_string(),
         includes_default: config.include_default,
-        settings,
+        settings: Some(settings),
     }
 }
 

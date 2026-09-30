@@ -109,9 +109,10 @@ pub struct HostInfo {
     pub claude: Option<ClaudeInfo>,
     pub accounts_base: String,
     pub includes_default: bool,
-    /// What the server was set to do, from any app paired with it.
+    /// What the server was set to do, from any app paired with it. `None`
+    /// from a server too old to have settings.
     #[serde(default)]
-    pub settings: HostSettings,
+    pub settings: Option<HostSettings>,
 }
 
 /// A server's own settings, changed from the app (`PUT /v1/settings`).

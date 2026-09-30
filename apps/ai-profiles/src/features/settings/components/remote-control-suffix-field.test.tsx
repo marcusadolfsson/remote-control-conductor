@@ -77,8 +77,8 @@ describe('RemoteControlSuffixField', () => {
   })
 
   it('asks for a newer server when the host has an older one', () => {
-    renderWithQuery(<RemoteControlSuffixField host={host} info={info({ serverVersion: '0.6.2' })} />)
-    expect(screen.getByText(/Update the server to 0\.6\.3 or later/)).toBeInTheDocument()
+    renderWithQuery(<RemoteControlSuffixField host={host} info={info({ settings: null })} />)
+    expect(screen.getByText(/Update the server on xjopa1/)).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).toBeNull()
   })
 })

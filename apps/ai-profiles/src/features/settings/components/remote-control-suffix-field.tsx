@@ -6,8 +6,6 @@ import { Input } from '@/design/ui/input'
 import { sessionErrorMessage } from '@/features/profiles/components/session-error-message'
 import { useSetHostSettings } from '@/features/remote/api/use-remote'
 
-import { supportsHostSettings } from '../lib/host-settings'
-
 type Props = {
   /**
    * The paired host.
@@ -33,10 +31,10 @@ export function RemoteControlSuffixField({ host, info }: Props) {
   if (!info) {
     return null
   }
-  if (!supportsHostSettings(info.serverVersion)) {
+  if (!info.settings) {
     return (
       <p className="text-[11px] text-muted">
-        Update the server to 0.6.3 or later to add its name to Remote Control sessions.
+        Update the server on {host.label} to add its name to Remote Control sessions.
       </p>
     )
   }

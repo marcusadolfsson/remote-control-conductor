@@ -330,7 +330,9 @@ async fn adds_the_servers_name_to_remote_control_names_once_set() {
     assert_eq!(set.status(), StatusCode::OK);
     let info: HostInfo = server.get("/v1/info").await.json().await.unwrap();
     assert_eq!(
-        info.settings.remote_control_suffix.as_deref(),
+        info.settings
+            .and_then(|settings| settings.remote_control_suffix)
+            .as_deref(),
         Some("xjopa1")
     );
 
