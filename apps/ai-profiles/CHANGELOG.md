@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.6.0](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.6.0) (2026-09-30)
+
+Brings in ai-profiles 1.4.0.
+
+### Added
+
+* **sessions:** ai-profiles' own Sessions panel for the profiles on this Mac: list, move, archive and restore, with search, a Desktop/CLI filter, and a Repair banner for desktop sessions from before profiles had their own folder
+* **profiles:** the account a profile is signed in under is also read from its desktop app's Cowork sessions
+
+### Changed
+
+* **mcp:** on this Mac, a move archives the session it leaves behind and keeps the destination's copy of a memory note both profiles changed; deleting an archive is for hosts only
+* **server:** transcripts are read the way ai-profiles reads them: a subagent's transcript isn't listed as a session, an untitled session is named after its first prompt, a name kept beside the transcript is used, and a moved session shows its new folder
+
+### Fixed
+
+* **server:** listing a host no longer reads each running session's whole transcript again, so hosts with long sessions answer in time
+* **remote:** opening a session in Claude no longer passes on the environment the app was started with
+
 ## [0.5.1](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.5.1) (2026-09-24)
 
 ### Added
@@ -29,6 +48,28 @@ The first release as Remote Control Conductor, formerly ai-profiles-remote. The 
 * **remote:** flag sessions that wait on a restart to take an installed Claude Code update, and restart them all at once
 * **mcp:** an MCP server in the app, so Claude Desktop and Claude Code can manage your profiles and sessions (Settings → MCP server)
 * **rename:** the app is Remote Control Conductor, and the server remote-control-conductor-server; setting the server up again moves an ai-profiles-server install over, pairings included
+
+## [1.4.0](https://github.com/bartekczyz/ai-profiles/compare/v1.3.1...v1.4.0) (2026-09-27)
+
+
+### Added
+
+* **profiles:** let the default profile be renamed ([#49](https://github.com/bartekczyz/ai-profiles/issues/49)) (by [@marcusadolfsson](https://github.com/marcusadolfsson)) ([52f2896](https://github.com/bartekczyz/ai-profiles/commit/52f28961fe348114a35604a71e93e1a7a09a6598))
+* **profiles:** show the account a profile is signed in under ([#53](https://github.com/bartekczyz/ai-profiles/issues/53)) (by [@marcusadolfsson](https://github.com/marcusadolfsson)) ([9dbd8eb](https://github.com/bartekczyz/ai-profiles/commit/9dbd8ebd4534f40087ba9bcb5bde176d9f72cd18))
+* **sessions:** list, move, archive and restore each profile's coding sessions ([#66](https://github.com/bartekczyz/ai-profiles/issues/66)) ([a60783a](https://github.com/bartekczyz/ai-profiles/commit/a60783a413445a505db175330fc10f699b4e4c90))
+
+
+### Fixed
+
+* **launch:** don't pass on the config home ai-profiles was started with ([#63](https://github.com/bartekczyz/ai-profiles/issues/63)) (by [@marcusadolfsson](https://github.com/marcusadolfsson)) ([175a9fb](https://github.com/bartekczyz/ai-profiles/commit/175a9fb8ce0b169f7c13a6be0005176fffae9473))
+* **launchers:** point Claude desktop profiles at their own config dir ([#48](https://github.com/bartekczyz/ai-profiles/issues/48)) (by [@marcusadolfsson](https://github.com/marcusadolfsson)) ([360c49d](https://github.com/bartekczyz/ai-profiles/commit/360c49d8c1d0509d906ca5d8d3f1eed25a7fa519))
+* **profiles:** say that Claude's own Dock icon costs Cowork its folders, and start it off ([#61](https://github.com/bartekczyz/ai-profiles/issues/61)) (by [@marcusadolfsson](https://github.com/marcusadolfsson)) ([e368f65](https://github.com/bartekczyz/ai-profiles/commit/e368f65605498cb32b8f21d1dfd6113c38010a42))
+* **security:** validate profile names, scope backup deletion, add CSP ([#47](https://github.com/bartekczyz/ai-profiles/issues/47)) (by [@marcusadolfsson](https://github.com/marcusadolfsson)) ([2d6c06a](https://github.com/bartekczyz/ai-profiles/commit/2d6c06a7b72c926656b2240fe29fabc81063fd00))
+
+
+### Changed
+
+* pin pane headers above a scrolling body ([#62](https://github.com/bartekczyz/ai-profiles/issues/62)) ([b595c9a](https://github.com/bartekczyz/ai-profiles/commit/b595c9a5a802867ab476e525c8b395a80dc9967c))
 
 ## [1.3.1](https://github.com/bartekczyz/ai-profiles/compare/v1.3.0...v1.3.1) (2026-09-22)
 
