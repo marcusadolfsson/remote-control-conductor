@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { MemoryDecision, TransferMemoryFile } from '@/lib/types'
 
 import { useState } from 'react'
@@ -136,6 +137,8 @@ function MemoryConflict({
     }
   }
 
+  const merged = typeof choice === 'object' ? choice.merged : null
+
   return (
     <li className="space-y-1.5 rounded-[8px] border border-border-soft px-2.5 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -152,29 +155,19 @@ function MemoryConflict({
       <fieldset className="flex flex-wrap gap-1.5">
         <legend className="sr-only">{`What to keep of ${file.path}`}</legend>
         {options.map((option) => (
-          <button
+          <ChoiceButton
             key={option.value}
-            type="button"
-            aria-pressed={!merging && choice === option.value}
             // Not while Claude merges: the choice would change under it.
+            pressed={!merging && choice === option.value}
             disabled={merging}
-            className={cn(
-              'cursor-pointer rounded-[6px] border px-2 py-0.5 text-meta',
-              !merging && choice === option.value ? 'border-orange text-ink' : 'border-border-soft text-muted-strong',
-            )}
             onClick={() => onChoice(option.value)}
           >
             {option.label}
-          </button>
+          </ChoiceButton>
         ))}
-        <button
-          type="button"
-          aria-pressed={merging || typeof choice === 'object'}
+        <ChoiceButton
+          pressed={merging || merged !== null}
           disabled={merging}
-          className={cn(
-            'cursor-pointer rounded-[6px] border px-2 py-0.5 text-meta',
-            merging || typeof choice === 'object' ? 'border-orange text-ink' : 'border-border-soft text-muted-strong',
-          )}
           onClick={() => {
             if (proposal === null) {
               void askClaude()
@@ -183,36 +176,142 @@ function MemoryConflict({
             }
           }}
         >
-          {merging ? 'Claude is merging…' : proposal !== null ? 'Claude’s merge' : 'Merge with Claude'}
-        </button>
+          {mergeLabel(merging, proposal !== null)}
+        </ChoiceButton>
       </fieldset>
-      {mergeError !== null ? (
-        <p role="alert" className="text-meta text-red">
-          {sessionErrorMessage(mergeError, 'The merge failed; choose another option.')}
-        </p>
-      ) : null}
-      {typeof choice === 'object' ? (
-        <div className="space-y-1.5">
-          <Text label="Claude’s merge" text={choice.merged} />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setProposal(null)
-              onChoice('newer')
-            }}
-          >
-            Discard
-          </Button>
-        </div>
-      ) : null}
-      {showing ? (
-        <div className="grid grid-cols-2 gap-2">
-          <Text label={`${destination} (now)`} text={file.destinationText ?? ''} />
-          <Text label={source} text={file.sourceText ?? ''} />
-        </div>
-      ) : null}
+      <MergeError error={mergeError} />
+      <MergedText
+        merged={merged}
+        onDiscard={() => {
+          setProposal(null)
+          onChoice('newer')
+        }}
+      />
+      <BothTexts
+        shown={showing}
+        source={source}
+        destination={destination}
+        sourceText={file.sourceText ?? ''}
+        destinationText={file.destinationText ?? ''}
+      />
     </li>
+  )
+}
+
+/**
+ * Pure: what the merge button says: while Claude merges, once it has, or
+ * before it's asked.
+ */
+function mergeLabel(merging: boolean, merged: boolean): string {
+  if (merging) {
+    return 'Claude is merging…'
+  }
+  return merged ? 'Claude’s merge' : 'Merge with Claude'
+}
+
+type ChoiceButtonProps = {
+  /**
+   * Whether this is the choice made.
+   */
+  pressed: boolean
+  /**
+   * Whether it can't be chosen now.
+   */
+  disabled: boolean
+  /**
+   * Makes the choice.
+   */
+  onClick: () => void
+  children: ReactNode
+}
+
+/**
+ * One way to settle a note both profiles changed, lit when it's the one
+ * chosen.
+ */
+function ChoiceButton({ pressed, disabled, onClick, children }: ChoiceButtonProps) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      disabled={disabled}
+      className={cn(
+        'cursor-pointer rounded-[6px] border px-2 py-0.5 text-meta',
+        pressed ? 'border-orange text-ink' : 'border-border-soft text-muted-strong',
+      )}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  )
+}
+
+/**
+ * Why Claude's merge failed, if it did.
+ */
+function MergeError({ error }: { error: unknown }) {
+  if (error === null) {
+    return null
+  }
+  return (
+    <p role="alert" className="text-meta text-red">
+      {sessionErrorMessage(error, 'The merge failed; choose another option.')}
+    </p>
+  )
+}
+
+/**
+ * Claude's merge, while it's the choice, to read before it's used or discard.
+ */
+function MergedText({ merged, onDiscard }: { merged: string | null; onDiscard: () => void }) {
+  if (merged === null) {
+    return null
+  }
+  return (
+    <div className="space-y-1.5">
+      <Text label="Claude’s merge" text={merged} />
+      <Button variant="ghost" size="sm" onClick={onDiscard}>
+        Discard
+      </Button>
+    </div>
+  )
+}
+
+type BothTextsProps = {
+  /**
+   * Whether the user asked to see them.
+   */
+  shown: boolean
+  /**
+   * The profile the session comes from.
+   */
+  source: string
+  /**
+   * The profile it goes to.
+   */
+  destination: string
+  /**
+   * The note as the source has it.
+   */
+  sourceText: string
+  /**
+   * The note as the destination has it now.
+   */
+  destinationText: string
+}
+
+/**
+ * Both profiles' versions of the note, side by side, when asked for.
+ */
+function BothTexts({ shown, source, destination, sourceText, destinationText }: BothTextsProps) {
+  if (!shown) {
+    return null
+  }
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <Text label={`${destination} (now)`} text={destinationText} />
+      <Text label={source} text={sourceText} />
+    </div>
   )
 }
 
