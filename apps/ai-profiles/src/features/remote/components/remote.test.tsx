@@ -332,7 +332,7 @@ describe('RemoteAccountDetail', () => {
   it('says which running sessions wait on a restart to take the installed update', async () => {
     vi.mocked(remoteListAccounts).mockResolvedValue([account()])
     vi.mocked(remoteListSessions).mockResolvedValue([
-      session({ updatePending: true, claudeVersion: '2.1.280' }),
+      session({ updatePending: true, claudeVersion: '2.1.280', installedVersion: '2.1.281' }),
       session({ id: 's2', title: 'Current', updatePending: false, claudeVersion: '2.1.281' }),
     ])
     renderWithQuery(
@@ -344,7 +344,8 @@ describe('RemoteAccountDetail', () => {
     const badges = await within(running).findAllByText('Restart to update')
     expect(badges).toHaveLength(1)
     expect(badges[0].closest('span')).toHaveAttribute('title', expect.stringContaining('2.1.280'))
-    expect(screen.getByRole('button', { name: /Restart all · 1 to update/ })).toBeInTheDocument()
+    expect(within(running).getByText('2.1.280 → 2.1.281')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Restart all · 1 to update \(2\.1\.281\)/ })).toBeInTheDocument()
   })
 
   it('stops a running session once asked to, and restarts one', async () => {

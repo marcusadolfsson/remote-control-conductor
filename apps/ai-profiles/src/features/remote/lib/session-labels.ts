@@ -16,13 +16,35 @@ export function stampToIso(stamp: string): string {
 }
 
 /**
+ * Pure: the update a restart brings a session, as `2.1.281 → 2.1.282`, when
+ * it waits on one and both versions are known.
+ */
+export function updateVersions(
+  session: Pick<RemoteSession, 'updatePending' | 'claudeVersion' | 'installedVersion'>,
+): string | null {
+  if (!session.updatePending || !session.claudeVersion || !session.installedVersion) {
+    return null
+  }
+  return `${session.claudeVersion} → ${session.installedVersion}`
+}
+
+/**
+ * The newer Claude Code the sessions waiting on an update would restart on,
+ * if any says.
+ */
+export function installedVersionOf(sessions: Array<Pick<RemoteSession, 'installedVersion'>>): string | null {
+  return sessions.find((session) => session.installedVersion)?.installedVersion ?? null
+}
+
+/**
  * What a running session's Restart says on hover: that it updates Claude
  * Code when a newer one is installed, and that it moves into tmux when the
  * session runs outside it.
  */
 export function restartTitle(session: RemoteSession, inTmux: boolean): string {
   if (session.updatePending) {
-    return `Restart to update: stop it and start it again on the newer claude installed on the host (it runs ${session.claudeVersion ?? 'an older one'})`
+    const newer = session.installedVersion ? `Claude Code ${session.installedVersion}` : 'the newer claude'
+    return `Restart to update: stop it and start it again on ${newer}, installed on the host (it runs ${session.claudeVersion ?? 'an older one'})`
   }
   return inTmux
     ? "Restart: stop it and start it again on the host's current claude"
@@ -32,17 +54,29 @@ export function restartTitle(session: RemoteSession, inTmux: boolean): string {
 /** How far Restart all has got: the session it's on, of how many. */
 export type RestartProgress = { done: number; total: number }
 
-/** What Restart all says: how far it has got, or how many sessions it would update. */
-export function restartAllLabel(progress: RestartProgress | null, updating: number): string {
+/**
+ * What Restart all says: how far it has got, or how many sessions it would
+ * update, and to which Claude Code when `installed` says.
+ */
+export function restartAllLabel(
+  progress: RestartProgress | null,
+  updating: number,
+  installed: string | null = null,
+): string {
   if (progress) {
     return `Restarting ${progress.done + 1} of ${progress.total}…`
   }
-  return updating > 0 ? `Restart all · ${updating} to update` : 'Restart all'
+  if (updating === 0) {
+    return 'Restart all'
+  }
+  return installed ? `Restart all · ${updating} to update (${installed})` : `Restart all · ${updating} to update`
 }
 
 /** What Restart all says on hover, with how many sessions run an older claude. */
-export function restartAllTitle(updating: number): string {
-  return updating > 0
-    ? `Stop every running session and start it again on the host's current claude: ${updating} of them run an older one`
-    : "Stop every running session and start it again on the host's current claude"
+export function restartAllTitle(updating: number, installed: string | null = null): string {
+  const all = "Stop every running session and start it again on the host's current claude"
+  if (updating === 0) {
+    return all
+  }
+  return `${all}: ${updating} of them run an older one${installed ? ` than ${installed}` : ''}`
 }

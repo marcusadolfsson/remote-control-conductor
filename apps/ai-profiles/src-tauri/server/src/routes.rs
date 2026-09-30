@@ -594,6 +594,9 @@ async fn list_sessions(
                         .claude_version
                         .as_deref()
                         .is_some_and(|running| sessions::newer_version(&installed, running));
+                if session.update_pending {
+                    session.installed_version = Some(installed.clone());
+                }
             }
         }
         let now_ms = std::time::SystemTime::now()
