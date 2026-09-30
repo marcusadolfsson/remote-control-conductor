@@ -22,30 +22,14 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use serde::{Deserialize, Serialize};
-
-use crate::transcript::is_safe_name;
+use ai_profiles_core::api::ItemAction;
+use ai_profiles_core::transcript::is_safe_name;
 
 /// Where backups and archives go, in each account.
 pub const BACKUPS_DIR: &str = "session-transfer-backups";
 
 /// The end of an archive folder's name: `<stamp>-archived`.
 pub const ARCHIVED_SUFFIX: &str = "-archived";
-
-/// What a move does with one item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ItemAction {
-    /// Not in the destination yet.
-    Copy,
-    /// Already there, identical.
-    Same,
-    /// There, different: backed up, then replaced.
-    Replace,
-    /// Only the destination has it, left over from an earlier copy of the
-    /// session: backed up, then removed.
-    Remove,
-}
 
 /// One thing a move copies, replaces or removes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -835,7 +819,8 @@ mod tests {
         assert!(!old.exists());
         assert_eq!(list_archived(&account)[0].path, with_suffix(&old, ".gz"));
         assert!(compress_archived(&account).is_empty(), "once");
-        let info = crate::transcript::read_transcript(&with_suffix(&old, ".gz")).unwrap();
+        let info =
+            ai_profiles_core::transcript::read_transcript(&with_suffix(&old, ".gz")).unwrap();
         assert!(info.first_timestamp.is_none() && !info.has_reply);
     }
 

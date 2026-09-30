@@ -28,7 +28,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde::{Deserialize, Serialize};
+use ai_profiles_core::api::{Decision, MemoryAction, Side};
 
 use crate::session_move::{copy_any, write_into_place};
 
@@ -38,31 +38,6 @@ pub const BASE_DIR: &str = ".claudemulti/memory-base";
 /// The index file, at the top of the memory folder.
 pub const INDEX: &str = "MEMORY.md";
 
-/// Which side of a move.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Side {
-    Source,
-    Destination,
-}
-
-/// What a move does with one memory file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum MemoryAction {
-    /// The destination doesn't have it: copied.
-    Add,
-    /// Identical: nothing.
-    Same,
-    /// The index: merged line by line.
-    Index,
-    /// Both sides' changes merge cleanly.
-    Merge,
-    /// Both changed it in the same place, or there's no common version to
-    /// merge against: the user decides.
-    Conflict,
-}
-
 /// One memory file in a move's plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryFile {
@@ -71,16 +46,6 @@ pub struct MemoryFile {
     pub action: MemoryAction,
     /// Which copy was written later (a tie counts as the source's).
     pub newer: Side,
-}
-
-/// What the user decided for a conflict.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "take", content = "text")]
-pub enum Decision {
-    Source,
-    Destination,
-    /// Claude's merge, as the user accepted it.
-    Merged(String),
 }
 
 /// What merging did, one line per file that changed or was looked at, as

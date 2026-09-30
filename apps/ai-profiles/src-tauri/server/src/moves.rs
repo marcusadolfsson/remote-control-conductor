@@ -14,11 +14,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+use crate::memory::{self, MemoryReport};
+use crate::session_move::{self, Item, MoveError};
 use ai_profiles_core::api::{
     ArchivedSession, RunningMatch, TmuxWindow, TransferItem, TransferMemoryFile, TransferPlan,
 };
-use ai_profiles_core::memory::{self, Decision, MemoryAction, MemoryReport};
-use ai_profiles_core::session_move::{self, Item, ItemAction, MoveError};
+use ai_profiles_core::api::{Decision, ItemAction, MemoryAction, Side};
 use ai_profiles_core::transcript::read_transcript;
 
 use crate::accounts::{self, AccountDir};
@@ -389,8 +390,8 @@ pub fn claude_merge(
     })?;
     let (source, destination) = (&prepared.source.name, &prepared.destination.name);
     let newer = match file.newer {
-        memory::Side::Source => source,
-        memory::Side::Destination => destination,
+        Side::Source => source,
+        Side::Destination => destination,
     };
     let prompt = memory::claude_merge_prompt(
         newer,

@@ -9,9 +9,8 @@ use std::sync::Arc;
 use ai_profiles_core::api::{
     ArchivedSession, ErrorBody, PairResponse, TransferPlan, TransferReport,
 };
-use ai_profiles_core::memory::MemoryAction;
+use ai_profiles_core::api::{ItemAction, MemoryAction};
 use ai_profiles_core::registry::RegistryEntry;
-use ai_profiles_core::session_move::ItemAction;
 use ai_profiles_core::tls::pinned_client_config;
 use ai_profiles_server::certs::Identity;
 use ai_profiles_server::config::Config;
