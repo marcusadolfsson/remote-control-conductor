@@ -270,7 +270,7 @@ impl AiProfiles {
     }
 
     #[tool(
-        description = "A profile's Claude Code sessions: title, folder, when, whether it's running. On a host also its Remote Control link, whether it waits on input, and whether it waits on a restart to take an installed update (updatePending).",
+        description = "A profile's Claude Code sessions: title, folder, when, whether it's running. On a host also its Remote Control link, whether it waits on input, and whether it waits on a restart to take an installed update (updatePending, with the installedVersion it would restart on).",
         annotations(read_only_hint = true)
     )]
     async fn list_sessions(
@@ -711,6 +711,7 @@ fn remote_session_json(session: &RemoteSession) -> Value {
         "link": link,
         "claudeVersion": session.claude_version,
         "updatePending": session.update_pending.then_some(true),
+        "installedVersion": session.installed_version,
         "window": session.window.as_ref().map(|window| &window.window_id),
         "empty": session.empty.then_some(true),
         "sizeBytes": session.size_bytes,
