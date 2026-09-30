@@ -11,6 +11,7 @@ import type {
   ExistingInstallInfo,
   ExistingInstallSizes,
   HostInfo,
+  HostSettings,
   ImportExistingInput,
   LaunchResult,
   LoginStart,
@@ -188,6 +189,17 @@ export function remoteRemoveHost(hostId: string): Promise<void> {
 
 export function remoteHostInfo(hostId: string): Promise<HostInfo> {
   return invoke<HostInfo>('remote_host_info', { hostId })
+}
+
+/**
+ * Put `remoteControlSuffix` after the Remote Control names host `hostId`
+ * gives sessions from now on, in parentheses, or stop (`null`).
+ */
+export function remoteSetHostSettings(input: {
+  hostId: string
+  remoteControlSuffix: string | null
+}): Promise<HostSettings> {
+  return invoke<HostSettings>('remote_set_host_settings', input)
 }
 
 export function remoteListAccounts(hostId: string): Promise<Array<RemoteAccount>> {

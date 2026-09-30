@@ -7,19 +7,19 @@ use std::time::Duration;
 
 use ai_profiles_core::api::{
     ArchiveResult, ArchivedSession, CreateAccountRequest, DeleteArchiveResult, DeletedAccount,
-    DirListing, HostInfo, LaunchResult, LoginCodeRequest, LoginStart, LogoutRequest, LogoutResult,
-    MemoryMergeRequest, MemoryMergeResult, MoveProgress, NewSessionRequest, PairRequest,
-    PairResponse, Ping, RemoteAccount, RemoteSession, RenameAccountRequest, RenameSessionRequest,
-    RenameSessionResult, RestoreResult, ResumeRequest, StopResult, TransferPlan, TransferQuery,
-    TransferReport, TransferRequest, WindowKey, WindowKeysRequest, WindowScreen, API_HEADER,
-    API_VERSION,
+    DirListing, HostInfo, HostSettings, LaunchResult, LoginCodeRequest, LoginStart, LogoutRequest,
+    LogoutResult, MemoryMergeRequest, MemoryMergeResult, MoveProgress, NewSessionRequest,
+    PairRequest, PairResponse, Ping, RemoteAccount, RemoteSession, RenameAccountRequest,
+    RenameSessionRequest, RenameSessionResult, RestoreResult, ResumeRequest, StopResult,
+    TransferPlan, TransferQuery, TransferReport, TransferRequest, WindowKey, WindowKeysRequest,
+    WindowScreen, API_HEADER, API_VERSION,
 };
 use ai_profiles_core::transcript::transcripts;
 use axum::extract::{DefaultBodyLimit, Path as UrlPath, Query, Request, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Extension, Json, Router};
 use serde::Deserialize;
 
@@ -118,6 +118,7 @@ type Shared = Arc<ServerState>;
 pub fn router(state: Shared) -> Router {
     let authenticated = Router::new()
         .route("/v1/info", get(info))
+        .route("/v1/settings", put(set_settings))
         .route("/v1/accounts", get(list_accounts).post(create_account))
         .route("/v1/accounts/{name}", delete(delete_account))
         .route("/v1/accounts/{name}/login", post(start_login))
@@ -272,7 +273,7 @@ async fn pair(
         Ok(Json(PairResponse {
             client_id: client.id,
             token,
-            info: host_info(&state.config),
+            info: host_info(&state.config, state.store.settings().unwrap_or_default()),
         }))
     })
     .await
@@ -291,7 +292,48 @@ async fn unpair(
 }
 
 async fn info(State(state): State<Shared>) -> Result<Json<HostInfo>, ApiError> {
-    blocking(move || Ok(Json(host_info(&state.config)))).await
+    blocking(move || {
+        let settings = state.store.settings()?;
+        Ok(Json(host_info(&state.config, settings)))
+    })
+    .await
+}
+
+/// The longest suffix a Remote Control name takes.
+const SUFFIX_MAX_CHARS: usize = 40;
+
+async fn set_settings(
+    State(state): State<Shared>,
+    Json(request): Json<HostSettings>,
+) -> Result<Json<HostSettings>, ApiError> {
+    blocking(move || {
+        let suffix = request
+            .remote_control_suffix
+            .map(|suffix| suffix.trim().to_owned())
+            .filter(|suffix| !suffix.is_empty());
+        if let Some(suffix) = &suffix {
+            if suffix.chars().count() > SUFFIX_MAX_CHARS
+                || suffix.chars().any(|c| c.is_control() || c == '(' || c == ')')
+            {
+                return Err(ApiError::invalid(format!(
+                    "The name to add is at most {SUFFIX_MAX_CHARS} characters, on one line, without parentheses."
+                )));
+            }
+        }
+        let settings = HostSettings {
+            remote_control_suffix: suffix,
+        };
+        state.store.set_settings(&settings)?;
+        eprintln!(
+            "Remote Control names {}",
+            settings
+                .remote_control_suffix
+                .as_deref()
+                .map_or("left as they are".to_owned(), |suffix| format!("end in ({suffix})"))
+        );
+        Ok(Json(settings))
+    })
+    .await
 }
 
 fn describe(state: &ServerState, account: accounts::AccountDir) -> RemoteAccount {
@@ -726,8 +768,10 @@ async fn new_session(
             .unwrap_or_default();
         // Unnamed, it's named after its folder rather than something Remote
         // Control makes up, so the Claude app, the registry and the list agree.
-        let remote_control_name =
-            session_name(request.name)?.or_else(|| (!folder.is_empty()).then(|| folder.clone()));
+        let suffix = state.store.settings()?.remote_control_suffix;
+        let remote_control_name = session_name(request.name)?
+            .or_else(|| (!folder.is_empty()).then(|| folder.clone()))
+            .map(|name| launch::with_host_suffix(name, suffix.as_deref()));
         let window_name = tmux::window_name(
             remote_control_name.as_deref().unwrap_or(""),
             &format!("{}-{folder}", account.name),
@@ -948,6 +992,11 @@ pub(crate) fn resume_held(
             .unwrap_or(""),
         &format!("claude-{}", &id[..8]),
     );
+    let suffix = state
+        .store
+        .settings()
+        .unwrap_or_default()
+        .remote_control_suffix;
     let started = launch::start(
         &state.tmux,
         &Launch {
@@ -958,10 +1007,13 @@ pub(crate) fn resume_held(
             // Named after what the app lists it as, generated title included,
             // else its folder, so the Claude app, the registry and the list
             // agree, rather than something Remote Control makes up.
-            remote_control_name: info.title().or_else(|| {
-                cwd.file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-            }),
+            remote_control_name: info
+                .title()
+                .or_else(|| {
+                    cwd.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                })
+                .map(|name| launch::with_host_suffix(name, suffix.as_deref())),
             resume: Some(id.clone()),
             trust_folder,
         },

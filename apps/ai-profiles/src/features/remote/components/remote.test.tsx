@@ -143,6 +143,7 @@ beforeEach(() => {
     claude: { path: '/home/marcus/.local/bin/claude', version: '2.1.280 (Claude Code)' },
     accountsBase: '/home/marcus/.claude-accounts',
     includesDefault: false,
+    settings: { remoteControlSuffix: null },
   })
   vi.mocked(remoteListAccounts).mockReset()
   vi.mocked(remoteListSessions).mockReset()

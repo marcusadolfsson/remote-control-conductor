@@ -13,6 +13,7 @@ import { PairHostDialog } from '@/features/remote/components/pair-host-dialog'
 import { copyToClipboard } from '@/lib/commands'
 
 import { hostStatus } from '../lib/host-status'
+import { RemoteControlSuffixField } from './remote-control-suffix-field'
 
 const headingClasses = 'font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-muted-strong'
 
@@ -178,6 +179,9 @@ function HostRow({ host, onRename, onRemove }: { host: RemoteHost; onRename: () 
         </div>
         <div className="truncate font-mono text-[11px] text-muted" title={status}>
           {status}
+        </div>
+        <div className="mt-2">
+          <RemoteControlSuffixField host={host} info={info.data} />
         </div>
       </div>
       <div className="flex items-center gap-1">

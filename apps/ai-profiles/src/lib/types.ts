@@ -336,6 +336,17 @@ export type HostInfo = {
   claude: { path: string; version: string | null } | null
   accountsBase: string
   includesDefault: boolean
+  /** What the server was set to do, from any Mac paired with it. */
+  settings: HostSettings
+}
+
+/** A server's own settings, changed from the app. */
+export type HostSettings = {
+  /**
+   * Put after every Remote Control name the server gives a session, in
+   * parentheses: "Deploy (xjopa1)". `null` leaves names as they are.
+   */
+  remoteControlSuffix: string | null
 }
 
 /** A Claude account on a remote host: one CLAUDE_CONFIG_DIR. */

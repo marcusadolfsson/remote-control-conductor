@@ -10,7 +10,9 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ai_profiles_core::api::{ErrorBody, LaunchResult, RemoteSession, WindowScreen};
+use ai_profiles_core::api::{
+    ErrorBody, HostInfo, HostSettings, LaunchResult, RemoteSession, WindowScreen,
+};
 use ai_profiles_core::tls::pinned_client_config;
 use ai_profiles_server::certs::Identity;
 use ai_profiles_server::config::Config;
@@ -301,6 +303,60 @@ async fn starts_a_named_session_with_remote_control_in_the_ai_session() {
         "#{window_id} #{window_name}",
     ]);
     assert!(names.contains(&format!("{} Deploy it", launched.window.window_id)));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn adds_the_servers_name_to_remote_control_names_once_set() {
+    if !tmux_installed() {
+        eprintln!("skipped: tmux isn't installed");
+        return;
+    }
+    let server = start().await;
+    let put = |body: serde_json::Value| {
+        server
+            .client()
+            .put(format!("{}/v1/settings", server.base))
+            .bearer_auth(&server.token)
+            .json(&body)
+            .send()
+    };
+    let refused = put(serde_json::json!({"remoteControlSuffix": "a (b)"}))
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    let set = put(serde_json::json!({"remoteControlSuffix": " xjopa1 "}))
+        .await
+        .unwrap();
+    assert_eq!(set.status(), StatusCode::OK);
+    let info: HostInfo = server.get("/v1/info").await.json().await.unwrap();
+    assert_eq!(
+        info.settings.remote_control_suffix.as_deref(),
+        Some("xjopa1")
+    );
+
+    let cwd = server.root.join("code");
+    let launched: LaunchResult = server
+        .post(
+            "/v1/accounts/work/sessions",
+            serde_json::json!({"cwd": cwd.display().to_string(), "name": "Deploy it", "trustFolder": true}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        launched.remote_control_name.as_deref(),
+        Some("Deploy it (xjopa1)")
+    );
+    assert!(server
+        .log()
+        .contains("ARG=--remote-control\nARG=Deploy it (xjopa1)\n"));
+
+    let cleared = put(serde_json::json!({"remoteControlSuffix": ""}))
+        .await
+        .unwrap();
+    let cleared: HostSettings = cleared.json().await.unwrap();
+    assert_eq!(cleared.remote_control_suffix, None);
 }
 
 #[tokio::test(flavor = "multi_thread")]

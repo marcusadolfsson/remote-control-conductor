@@ -10,6 +10,7 @@ use std::io;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+use ai_profiles_core::api::HostSettings;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
@@ -19,6 +20,7 @@ use subtle::ConstantTimeEq;
 
 const CLIENTS: &str = "clients.json";
 const PENDING: &str = "pending-pairings.json";
+const SETTINGS: &str = "settings.json";
 const LOCK: &str = "state.lock";
 
 /// How long a pairing code works for.
@@ -98,6 +100,18 @@ impl Store {
         fs::write(&staged, serde_json::to_vec_pretty(value)?)?;
         fs::set_permissions(&staged, fs::Permissions::from_mode(0o600))?;
         fs::rename(staged, path)
+    }
+
+    /// The server's own settings, as the app last set them.
+    pub fn settings(&self) -> io::Result<HostSettings> {
+        let _lock = self.lock()?;
+        self.read(SETTINGS)
+    }
+
+    /// Replace the server's settings.
+    pub fn set_settings(&self, settings: &HostSettings) -> io::Result<()> {
+        let _lock = self.lock()?;
+        self.write(SETTINGS, settings)
     }
 
     /// Remember a pairing secret for [`PAIRING_TTL`]. Expired ones are dropped

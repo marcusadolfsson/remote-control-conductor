@@ -13,11 +13,11 @@ use std::process::Command;
 
 use ai_profiles_core::api::{
     ArchiveResult, ArchivedSession, CreateAccountRequest, DeleteArchiveResult, DeletedAccount,
-    DirListing, HostInfo, LaunchResult, LoginCodeRequest, LoginStart, LogoutRequest, LogoutResult,
-    MemoryMergeRequest, MemoryMergeResult, MoveProgress, NewSessionRequest, PairRequest,
-    PairResponse, RemoteAccount, RemoteSession, RenameAccountRequest, RenameSessionRequest,
-    RenameSessionResult, RestoreResult, ResumeRequest, StopResult, TransferPlan, TransferReport,
-    TransferRequest, WindowKey, WindowKeysRequest, WindowScreen,
+    DirListing, HostInfo, HostSettings, LaunchResult, LoginCodeRequest, LoginStart, LogoutRequest,
+    LogoutResult, MemoryMergeRequest, MemoryMergeResult, MoveProgress, NewSessionRequest,
+    PairRequest, PairResponse, RemoteAccount, RemoteSession, RenameAccountRequest,
+    RenameSessionRequest, RenameSessionResult, RestoreResult, ResumeRequest, StopResult,
+    TransferPlan, TransferReport, TransferRequest, WindowKey, WindowKeysRequest, WindowScreen,
 };
 use ai_profiles_core::pairing::{self, display_fingerprint};
 use serde::Serialize;
@@ -205,6 +205,19 @@ async fn post<B: Serialize, T: serde::de::DeserializeOwned>(
 ) -> AppResult<T> {
     let (host, client) = connect(list, secrets, host_id)?;
     let answer = client.post(path, body).await?;
+    remember(list, &host, &answer.address);
+    Ok(answer.value)
+}
+
+/// Change a server's own settings; it answers with them as saved.
+pub async fn set_settings(
+    list: &HostList,
+    secrets: &dyn SecretStore,
+    host_id: &str,
+    settings: &HostSettings,
+) -> AppResult<HostSettings> {
+    let (host, client) = connect(list, secrets, host_id)?;
+    let answer = client.put("/v1/settings", settings).await?;
     remember(list, &host, &answer.address);
     Ok(answer.value)
 }
