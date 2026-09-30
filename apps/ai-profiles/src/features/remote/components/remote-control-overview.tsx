@@ -8,7 +8,7 @@ import { SidebarProfileRow } from '@/features/profiles/components/sidebar-profil
 
 import { useAllRemoteControlSessions } from '../api/use-remote'
 import { remoteSelectionId } from '../lib/remote-selection'
-import { OpenInClaudeButton } from './remote-account-detail'
+import { OpenInClaudeButton } from './open-in-claude-button'
 
 /**
  * The sidebar's Remote Control entry, above the hosts: how many sessions on

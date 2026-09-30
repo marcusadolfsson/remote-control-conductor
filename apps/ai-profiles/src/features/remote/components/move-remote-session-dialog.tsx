@@ -1,22 +1,21 @@
 import type { RemoteHost, RemoteSession, RemoteTransferPlan, RemoteTransferReport } from '@/lib/types'
+import type { Afterwards } from './use-move-options'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Check, LoaderCircle } from 'lucide-react'
 
-import { Button, cn, Dialog, Kbd } from '@/design'
+import { cn, Dialog } from '@/design'
+import { ProfileDialogFoot } from '@/features/profiles/components/profile-dialog-foot'
 import { type MemoryChoice, memoryDecisions, ProjectMemory } from '@/features/profiles/components/project-memory'
 import { sessionErrorMessage } from '@/features/profiles/components/session-error-message'
 import { shortenHomePath } from '@/features/profiles/components/shorten-home-path'
 import { formatBytes } from '@/lib/format-bytes'
 
-import {
-  useRemoteAccounts,
-  useRemoteMergeMemory,
-  useRemoteMoveProgress,
-  useRemoteTransfer,
-  useRemoteTransferPlan,
-} from '../api/use-remote'
+import { useRemoteMergeMemory, useRemoteMoveProgress, useRemoteTransfer } from '../api/use-remote'
+import { sessionTitle } from '../lib/session-labels'
+import { useMoveDestination } from './use-move-destination'
+import { useMoveOptions } from './use-move-options'
 
 type Props = {
   open: boolean
@@ -29,8 +28,42 @@ type Props = {
   onMoved: (report: RemoteTransferReport, to: string) => void
 }
 
-/** What becomes of the copy the session leaves behind. */
-type Afterwards = 'archive' | 'delete' | 'keep'
+type MoveFormProps = {
+  /** The host the session is on. */
+  host: RemoteHost
+  /** The account the session is in. */
+  account: string
+  /** The session to move. */
+  session: RemoteSession
+  /** Where it can go, where it's going, and the plan for that. */
+  destination: ReturnType<typeof useMoveDestination>
+  /** What the user decided on the way. */
+  options: ReturnType<typeof useMoveOptions>
+  /** Takes another destination. */
+  onPick: (name: string) => void
+  /** Why the last try failed, if it did. */
+  moveError: string | null
+}
+
+type DestinationSelectProps = {
+  /** The host's other profiles. */
+  destinations: Array<string>
+  /** The one picked. */
+  to: string | null
+  /** Takes another. */
+  onPick: (name: string) => void
+}
+
+type PlanStatusProps = {
+  /** The host's plan for the move, as it's read. */
+  plan: ReturnType<typeof useMoveDestination>['plan']
+  /** The host the session is on. */
+  hostId: string
+  /** The account the session is in. */
+  account: string
+  /** What the user decided on the way. */
+  options: ReturnType<typeof useMoveOptions>
+}
 
 /**
  * Moves a session to another profile on its host, the way claudemulti's
@@ -41,34 +74,23 @@ type Afterwards = 'archive' | 'delete' | 'keep'
  * a newer copy, and what to keep of a memory note both sides changed.
  */
 export function MoveRemoteSessionDialog({ open, host, account, session, onClose, onMoved }: Props) {
-  const accounts = useRemoteAccounts(host.id)
-  const destinations = useMemo(
-    () => (accounts.data ?? []).map((candidate) => candidate.name).filter((name) => name !== account),
-    [accounts.data, account],
-  )
-  const [chosen, setChosen] = useState<string | null>(null)
-  const to = chosen ?? destinations[0] ?? null
-  const plan = useRemoteTransferPlan(host.id, account, session.id, to)
+  const destination = useMoveDestination(host.id, account, session.id)
+  const options = useMoveOptions()
   const move = useRemoteTransfer(host.id, account)
-  const [replaceNewer, setReplaceNewer] = useState(false)
-  const [afterwards, setAfterwards] = useState<Afterwards>('archive')
-  const [resume, setResume] = useState(true)
-  const [choices, setChoices] = useState<Record<string, MemoryChoice>>({})
   const [moveError, setMoveError] = useState<string | null>(null)
   // The move's id on the host while it runs, to show how far it has got.
   const [progressId, setProgressId] = useState<string | null>(null)
-
-  function pickDestination(name: string) {
-    setChosen(name)
-    setReplaceNewer(false)
-    setChoices({})
-    setMoveError(null)
-  }
-
+  const { to, plan } = destination
   const data = plan.data
   // The session running is dealt with by exiting it first.
   const running = data?.running.some((found) => found.exact) ?? false
-  const ready = data !== undefined && to !== null && (!data.destinationNewer || replaceNewer) && !move.isPending
+  const ready = data !== undefined && to !== null && (!data.destinationNewer || options.replaceNewer) && !move.isPending
+
+  function pickDestination(name: string) {
+    destination.pick(name)
+    options.reset()
+    setMoveError(null)
+  }
 
   async function handleMove() {
     if (!ready || !data || to === null) {
@@ -84,12 +106,12 @@ export function MoveRemoteSessionDialog({ open, host, account, session, onClose,
           to,
           stopFirst: running,
           confirmRunning: false,
-          replaceNewer,
-          archiveSource: afterwards === 'archive',
-          deleteSource: afterwards === 'delete',
-          resume,
+          replaceNewer: options.replaceNewer,
+          archiveSource: options.afterwards === 'archive',
+          deleteSource: options.afterwards === 'delete',
+          resume: options.resume,
           trustFolder: true,
-          memory: memoryDecisions(data.memory, choices),
+          memory: memoryDecisions(data.memory, options.choices),
           progressId: id,
         },
       })
@@ -103,96 +125,124 @@ export function MoveRemoteSessionDialog({ open, host, account, session, onClose,
     }
   }
 
-  const title = session.title ?? session.lastPrompt ?? session.id
-
   return (
     <Dialog
       open={open}
       title="Move to another profile"
-      description={title}
+      description={sessionTitle(session)}
       className="w-[min(680px,calc(100%-64px))]"
       onClose={onClose}
       onSubmit={handleMove}
       closeOnOutsideClick={false}
       foot={
-        <>
-          <Button variant="ghost" size="sm" trailingKbd={<Kbd>⎋</Kbd>} disabled={move.isPending} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            trailingKbd={<Kbd variant="onOrange">⏎</Kbd>}
-            disabled={!ready}
-            onClick={handleMove}
-          >
-            {move.isPending ? (running ? 'Exiting and moving…' : 'Moving…') : running ? 'Exit and move' : 'Move'}
-          </Button>
-        </>
+        <ProfileDialogFoot
+          canSubmit={ready}
+          submitting={move.isPending}
+          submitLabel={running ? 'Exit and move' : 'Move'}
+          submittingLabel={running ? 'Exiting and moving…' : 'Moving…'}
+          onCancel={onClose}
+          onSubmit={handleMove}
+        />
       }
     >
       {move.isPending ? (
         <MoveProgressSteps hostId={host.id} progressId={progressId} />
-      ) : destinations.length === 0 ? (
-        <p className="text-body text-ink-soft">{host.label} has no other profile to move it to.</p>
       ) : (
-        <div className="space-y-3">
-          {session.cwd ? <p className="font-mono text-mono text-muted-strong">{shortenHomePath(session.cwd)}</p> : null}
-          <label className="flex items-center gap-2 text-body text-ink-soft">
-            <span className="w-8 shrink-0">To</span>
-            <select
-              className="h-8 flex-1 cursor-pointer rounded-[7px] border border-border bg-white/60 px-2 text-body text-ink dark:bg-white/[0.05]"
-              value={to ?? ''}
-              onChange={(event) => pickDestination(event.target.value)}
-            >
-              {destinations.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {plan.isLoading ? (
-            <p className="text-meta text-muted">Checking…</p>
-          ) : plan.isError ? (
-            <p role="alert" className="text-meta text-red">
-              {sessionErrorMessage(plan.error, 'Could not work out the move.')}
-            </p>
-          ) : data ? (
-            <PlanBody
-              plan={data}
-              hostId={host.id}
-              account={account}
-              replaceNewer={replaceNewer}
-              onReplaceNewer={setReplaceNewer}
-              choices={choices}
-              onChoice={(path, choice) => setChoices((previous) => ({ ...previous, [path]: choice }))}
-            />
-          ) : null}
-
-          <AfterwardsChoice
-            account={account}
-            to={to}
-            archiveBytes={data?.archiveBytes ?? null}
-            value={afterwards}
-            onChange={setAfterwards}
-          />
-          <Checkbox
-            checked={resume}
-            onChange={setResume}
-            label={`Resume it under ${to ?? 'the other profile'} afterwards`}
-            hint="In tmux, with Remote Control on. The Claude app shows only messages from the move on."
-          />
-
-          {moveError ? (
-            <p role="alert" className="text-meta text-red">
-              {moveError}
-            </p>
-          ) : null}
-        </div>
+        <MoveForm
+          host={host}
+          account={account}
+          session={session}
+          destination={destination}
+          options={options}
+          onPick={pickDestination}
+          moveError={moveError}
+        />
       )}
     </Dialog>
+  )
+}
+
+/**
+ * Where to move it, what that takes, and what becomes of the copy left
+ * behind; or that the host has no other profile.
+ */
+function MoveForm({ host, account, session, destination, options, onPick, moveError }: MoveFormProps) {
+  const { destinations, to, plan } = destination
+  if (destinations.length === 0) {
+    return <p className="text-body text-ink-soft">{host.label} has no other profile to move it to.</p>
+  }
+  return (
+    <div className="space-y-3">
+      {session.cwd ? <p className="font-mono text-mono text-muted-strong">{shortenHomePath(session.cwd)}</p> : null}
+      <DestinationSelect destinations={destinations} to={to} onPick={onPick} />
+      <PlanStatus plan={plan} hostId={host.id} account={account} options={options} />
+      <AfterwardsChoice
+        account={account}
+        to={to}
+        archiveBytes={plan.data?.archiveBytes ?? null}
+        value={options.afterwards}
+        onChange={options.setAfterwards}
+      />
+      <Checkbox
+        checked={options.resume}
+        onChange={options.setResume}
+        label={`Resume it under ${to ?? 'the other profile'} afterwards`}
+        hint="In tmux, with Remote Control on. The Claude app shows only messages from the move on."
+      />
+      {moveError ? (
+        <p role="alert" className="text-meta text-red">
+          {moveError}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+/** The profile to move it to. */
+function DestinationSelect({ destinations, to, onPick }: DestinationSelectProps) {
+  return (
+    <label className="flex items-center gap-2 text-body text-ink-soft">
+      <span className="w-8 shrink-0">To</span>
+      <select
+        className="h-8 flex-1 cursor-pointer rounded-[7px] border border-border bg-white/60 px-2 text-body text-ink dark:bg-white/[0.05]"
+        value={to ?? ''}
+        onChange={(event) => onPick(event.target.value)}
+      >
+        {destinations.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+/** The host's plan for the move once it's read, or that it's being read, or why it can't be. */
+function PlanStatus({ plan, hostId, account, options }: PlanStatusProps) {
+  if (plan.isLoading) {
+    return <p className="text-meta text-muted">Checking…</p>
+  }
+  if (plan.isError) {
+    return (
+      <p role="alert" className="text-meta text-red">
+        {sessionErrorMessage(plan.error, 'Could not work out the move.')}
+      </p>
+    )
+  }
+  if (!plan.data) {
+    return null
+  }
+  return (
+    <PlanBody
+      plan={plan.data}
+      hostId={hostId}
+      account={account}
+      replaceNewer={options.replaceNewer}
+      onReplaceNewer={options.setReplaceNewer}
+      choices={options.choices}
+      onChoice={options.choose}
+    />
   )
 }
 

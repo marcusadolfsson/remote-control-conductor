@@ -117,51 +117,110 @@ export function RemoteWindow({ host, account, windowId, onScreen }: Props) {
       {gone ? (
         <p className="text-meta text-muted">The window has closed.</p>
       ) : (
-        // A terminal: it takes the keyboard while focused.
-        <div
-          data-keeps-escape
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: a terminal takes the keyboard while focused
-          tabIndex={0}
-          role="application"
-          aria-roledescription="terminal"
-          aria-label={`Window ${windowId} on ${host.label}`}
-          onKeyDown={handleKeyDown}
-          className="max-h-[360px] overflow-auto rounded-md border border-border-soft bg-[#1d1b18] outline-none focus-visible:ring-2 focus-visible:ring-orange/50"
-        >
-          <pre
-            className="m-0 whitespace-pre px-2.5 py-2 font-mono text-[11px] leading-[1.35] text-[#e9e4da]"
-            style={screen.data ? { minWidth: `${screen.data.width}ch` } : undefined}
-          >
-            {screen.isPending ? '…' : text}
-          </pre>
-        </div>
+        <>
+          <TerminalScreen
+            label={`Window ${windowId} on ${host.label}`}
+            text={screen.isPending ? '…' : text}
+            width={screen.data?.width}
+            onKeyDown={handleKeyDown}
+          />
+          <KeyButtons onPress={(key) => send([{ key }])} />
+        </>
       )}
-      {gone ? null : (
-        <div className="flex flex-wrap items-center gap-1">
-          {keyButtons.map((button) => (
-            <Button
-              key={button.key}
-              variant="ghost"
-              size="sm"
-              title={button.title}
-              aria-label={`Press ${button.title}`}
-              onClick={() => send([{ key: button.key }])}
-            >
-              {button.label}
-            </Button>
-          ))}
-          <span className="ml-1 text-meta text-muted">Or click the screen and type.</span>
-        </div>
-      )}
-      {sendError ? (
-        <p role="alert" className="text-meta text-red">
-          {sendError}
-        </p>
-      ) : screen.isError && !gone ? (
-        <p role="alert" className="text-meta text-red">
-          {sessionErrorMessage(screen.error, 'The window could not be read.')}
-        </p>
-      ) : null}
+      <WindowAlert sendError={sendError} readError={gone ? null : screen.error} />
     </div>
+  )
+}
+
+type TerminalScreenProps = {
+  /**
+   * What screen readers call it.
+   */
+  label: string
+  /**
+   * The screen's text.
+   */
+  text: string
+  /**
+   * The window's width in columns, once known, so lines don't wrap.
+   */
+  width: number | undefined
+  /**
+   * Takes the keys pressed while it has focus.
+   */
+  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
+}
+
+/**
+ * The window's screen: a terminal, taking the keyboard while focused.
+ */
+function TerminalScreen({ label, text, width, onKeyDown }: TerminalScreenProps) {
+  return (
+    <div
+      data-keeps-escape
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: a terminal takes the keyboard while focused
+      tabIndex={0}
+      role="application"
+      aria-roledescription="terminal"
+      aria-label={label}
+      onKeyDown={onKeyDown}
+      className="max-h-[360px] overflow-auto rounded-md border border-border-soft bg-[#1d1b18] outline-none focus-visible:ring-2 focus-visible:ring-orange/50"
+    >
+      <pre
+        className="m-0 whitespace-pre px-2.5 py-2 font-mono text-[11px] leading-[1.35] text-[#e9e4da]"
+        style={width === undefined ? undefined : { minWidth: `${width}ch` }}
+      >
+        {text}
+      </pre>
+    </div>
+  )
+}
+
+/**
+ * The keys a terminal is hard to type without, as buttons.
+ */
+function KeyButtons({ onPress }: { onPress: (key: string) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {keyButtons.map((button) => (
+        <Button
+          key={button.key}
+          variant="ghost"
+          size="sm"
+          title={button.title}
+          aria-label={`Press ${button.title}`}
+          onClick={() => onPress(button.key)}
+        >
+          {button.label}
+        </Button>
+      ))}
+      <span className="ml-1 text-meta text-muted">Or click the screen and type.</span>
+    </div>
+  )
+}
+
+type WindowAlertProps = {
+  /**
+   * Why the last key didn't get through, if it didn't.
+   */
+  sendError: string | null
+  /**
+   * Why the screen couldn't be read, if it couldn't, while the window is open.
+   */
+  readError: unknown
+}
+
+/**
+ * What went wrong talking to the window, the last key first.
+ */
+function WindowAlert({ sendError, readError }: WindowAlertProps) {
+  const message = sendError ?? (readError ? sessionErrorMessage(readError, 'The window could not be read.') : null)
+  if (message === null) {
+    return null
+  }
+  return (
+    <p role="alert" className="text-meta text-red">
+      {message}
+    </p>
   )
 }

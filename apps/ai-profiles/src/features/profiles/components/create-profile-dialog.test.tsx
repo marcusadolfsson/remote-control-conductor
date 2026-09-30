@@ -86,9 +86,7 @@ describe('CreateProfileDialog — Claude CLI Remote', () => {
   it('makes a profile on the chosen server, with a name the server can use', async () => {
     const onCreateRemote = vi.fn().mockResolvedValue(undefined)
     const { user, onCreate, onClose } = setup({
-      remoteHosts: [server],
-      initialRemoteHostId: 'h1',
-      onCreateRemote,
+      remote: { hosts: [server], initialHostId: 'h1', onCreate: onCreateRemote },
     })
     expect(screen.getByLabelText('Server')).toHaveTextContent('xjopa1')
     expect(screen.queryByText('Surfaces')).toBeNull()

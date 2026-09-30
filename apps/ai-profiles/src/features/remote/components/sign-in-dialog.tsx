@@ -27,8 +27,20 @@ type Props = {
 /** The host's sign-in is over after these: only starting again helps. */
 const endedCodes = new Set(['login_failed', 'login_expired'])
 
-function errorCode(error: unknown): string | undefined {
-  return error && typeof error === 'object' && 'code' in error ? (error as AppError).code : undefined
+/**
+ * Pure: whether `error`, from handing over the code, ended the host's
+ * sign-in, so that only starting again helps.
+ */
+function endsSignIn(error: unknown): boolean {
+  const code = error && typeof error === 'object' && 'code' in error ? (error as AppError).code : undefined
+  return endedCodes.has(code ?? '')
+}
+
+/**
+ * Pure: whether there is a code to hand over, to a sign-in that is still on.
+ */
+function codeReady(login: LoginStart | null, code: string, submitting: boolean, ended: boolean): boolean {
+  return login !== null && code.trim().length > 0 && !submitting && !ended
 }
 
 /**
@@ -69,8 +81,9 @@ export function SignInDialog({ open, host, account, cancelLabel = 'Cancel', titl
     }
   }, [open])
 
-  const ended = submit.isError && endedCodes.has(errorCode(submit.error) ?? '')
-  const ready = login !== null && code.trim().length > 0 && !submit.isPending && !ended
+  const submitError = submit.isError ? submit.error : null
+  const ended = endsSignIn(submitError)
+  const ready = codeReady(login, code, submit.isPending, ended)
 
   async function handleSubmit() {
     if (!ready || login === null) {
@@ -108,86 +121,207 @@ export function SignInDialog({ open, host, account, cancelLabel = 'Cancel', titl
       onSubmit={handleSubmit}
       closeOnOutsideClick={false}
       foot={
-        <>
-          <Button
-            variant="ghost"
-            size="sm"
-            trailingKbd={<Kbd>⎋</Kbd>}
-            disabled={submit.isPending}
-            onClick={handleClose}
-          >
-            {cancelLabel}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            trailingKbd={<Kbd variant="onOrange">⏎</Kbd>}
-            disabled={!ready}
-            onClick={handleSubmit}
-          >
-            {submit.isPending ? 'Signing in…' : 'Sign in'}
-          </Button>
-        </>
+        <SignInFoot
+          cancelLabel={cancelLabel}
+          ready={ready}
+          submitting={submit.isPending}
+          onCancel={handleClose}
+          onSubmit={handleSubmit}
+        />
       }
     >
       <div className="space-y-3 text-body text-ink-soft">
-        {start.isPending ? (
-          <p className="text-muted">Asking {host.label} for a sign-in page…</p>
-        ) : start.isError ? (
-          <Problem
-            message={sessionErrorMessage(start.error, 'Signing in could not start.')}
-            onRetry={() => void begin()}
-          />
-        ) : login ? (
-          <>
-            <p>
-              The sign-in page is open in your browser. Sign in with the account {account} should use, then copy the
-              code it shows.
-            </p>
-            <Button
-              variant="secondary"
-              size="sm"
-              leadingIcon={<ExternalLink className="h-3.5 w-3.5" />}
-              onClick={() => void openExternalUrl(login.url)}
-            >
-              Open the page again
-            </Button>
-            <div>
-              <label
-                htmlFor="remote-sign-in-code"
-                className="mb-1.5 block font-mono text-[11.5px] font-medium uppercase tracking-[0.08em] text-muted"
-              >
-                Code
-              </label>
-              <Input
-                id="remote-sign-in-code"
-                value={code}
-                autoFocus
-                maxLength={512}
-                disabled={ended}
-                onChange={(event) => setCode(event.target.value)}
-                placeholder="Paste the code here"
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </div>
-          </>
-        ) : null}
-        {submit.isError ? (
-          ended ? (
-            <Problem
-              message={sessionErrorMessage(submit.error)}
-              retryLabel="Sign in again"
-              onRetry={() => void begin()}
-            />
-          ) : (
-            <p role="alert" className="text-meta text-red">
-              {sessionErrorMessage(submit.error, 'Signing in did not work.')}
-            </p>
-          )
-        ) : null}
+        <SignInStep
+          hostLabel={host.label}
+          account={account}
+          starting={start.isPending}
+          startError={start.isError ? start.error : null}
+          login={login}
+          code={code}
+          ended={ended}
+          onCodeChange={setCode}
+          onRetry={() => void begin()}
+        />
+        <SubmitProblem error={submitError} ended={ended} onRetry={() => void begin()} />
       </div>
     </Dialog>
+  )
+}
+
+type SignInFootProps = {
+  /**
+   * What the cancel button says.
+   */
+  cancelLabel: string
+  /**
+   * Whether there is a code to hand over.
+   */
+  ready: boolean
+  /**
+   * Whether the code is being handed over now.
+   */
+  submitting: boolean
+  /**
+   * Closes, ending the host's sign-in.
+   */
+  onCancel: () => void
+  /**
+   * Hands the code over.
+   */
+  onSubmit: () => void
+}
+
+/**
+ * The dialog's buttons.
+ */
+function SignInFoot({ cancelLabel, ready, submitting, onCancel, onSubmit }: SignInFootProps) {
+  return (
+    <>
+      <Button variant="ghost" size="sm" trailingKbd={<Kbd>⎋</Kbd>} disabled={submitting} onClick={onCancel}>
+        {cancelLabel}
+      </Button>
+      <Button
+        variant="primary"
+        size="sm"
+        trailingKbd={<Kbd variant="onOrange">⏎</Kbd>}
+        disabled={!ready}
+        onClick={onSubmit}
+      >
+        {submitting ? 'Signing in…' : 'Sign in'}
+      </Button>
+    </>
+  )
+}
+
+type SignInStepProps = {
+  /**
+   * What the host is called here.
+   */
+  hostLabel: string
+  /**
+   * The profile being signed in.
+   */
+  account: string
+  /**
+   * Whether the host is starting its sign-in now.
+   */
+  starting: boolean
+  /**
+   * Why the host couldn't start it, if it couldn't.
+   */
+  startError: unknown
+  /**
+   * The host's sign-in once started.
+   */
+  login: LoginStart | null
+  /**
+   * The code as pasted.
+   */
+  code: string
+  /**
+   * Whether the host's sign-in is over, so the code can't be changed.
+   */
+  ended: boolean
+  /**
+   * Takes the code as pasted.
+   */
+  onCodeChange: (code: string) => void
+  /**
+   * Starts the sign-in again.
+   */
+  onRetry: () => void
+}
+
+/**
+ * Where the sign-in is: starting, failed to start, or waiting for the code.
+ */
+function SignInStep({
+  hostLabel,
+  account,
+  starting,
+  startError,
+  login,
+  code,
+  ended,
+  onCodeChange,
+  onRetry,
+}: SignInStepProps) {
+  if (starting) {
+    return <p className="text-muted">Asking {hostLabel} for a sign-in page…</p>
+  }
+  if (startError) {
+    return <Problem message={sessionErrorMessage(startError, 'Signing in could not start.')} onRetry={onRetry} />
+  }
+  if (!login) {
+    return null
+  }
+  return (
+    <>
+      <p>
+        The sign-in page is open in your browser. Sign in with the account {account} should use, then copy the code it
+        shows.
+      </p>
+      <Button
+        variant="secondary"
+        size="sm"
+        leadingIcon={<ExternalLink className="h-3.5 w-3.5" />}
+        onClick={() => void openExternalUrl(login.url)}
+      >
+        Open the page again
+      </Button>
+      <div>
+        <label
+          htmlFor="remote-sign-in-code"
+          className="mb-1.5 block font-mono text-[11.5px] font-medium uppercase tracking-[0.08em] text-muted"
+        >
+          Code
+        </label>
+        <Input
+          id="remote-sign-in-code"
+          value={code}
+          autoFocus
+          maxLength={512}
+          disabled={ended}
+          onChange={(event) => onCodeChange(event.target.value)}
+          placeholder="Paste the code here"
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </div>
+    </>
+  )
+}
+
+type SubmitProblemProps = {
+  /**
+   * Why handing over the code failed, if it did.
+   */
+  error: unknown
+  /**
+   * Whether that ended the host's sign-in.
+   */
+  ended: boolean
+  /**
+   * Starts the sign-in again.
+   */
+  onRetry: () => void
+}
+
+/**
+ * Why the code didn't work: with a way to start again once the host's
+ * sign-in is over.
+ */
+function SubmitProblem({ error, ended, onRetry }: SubmitProblemProps) {
+  if (!error) {
+    return null
+  }
+  if (ended) {
+    return <Problem message={sessionErrorMessage(error)} retryLabel="Sign in again" onRetry={onRetry} />
+  }
+  return (
+    <p role="alert" className="text-meta text-red">
+      {sessionErrorMessage(error, 'Signing in did not work.')}
+    </p>
   )
 }
 
