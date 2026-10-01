@@ -1,7 +1,7 @@
 //! Starting Claude in a tmux window, the way claudemulti does, with Remote
 //! Control on:
 //!
-//! - a session someone named gets `--remote-control <name>`;
+//! - a session someone named gets `--name <name> --remote-control <name>`;
 //! - any other gets `--settings {"remoteControlAtStartup":true}`, and Remote
 //!   Control names it after its folder (an auto-generated title is never
 //!   passed as a name);
@@ -94,7 +94,15 @@ pub fn claude_argv(launch: &Launch) -> Vec<String> {
         .map(|name| name.trim_start_matches(['-', ' ']))
         .filter(|name| !name.is_empty());
     match name {
-        Some(name) => argv.extend(["--remote-control".to_owned(), name.to_owned()]),
+        // `--name` is the session's own name (the list, the registry, the
+        // prompt box), `--remote-control` its name in the Claude app: from
+        // 2.1.286 Claude takes the one only from the other flag.
+        Some(name) => argv.extend([
+            "--name".to_owned(),
+            name.to_owned(),
+            "--remote-control".to_owned(),
+            name.to_owned(),
+        ]),
         None => argv.extend([
             "--settings".to_owned(),
             r#"{"remoteControlAtStartup":true}"#.to_owned(),
@@ -405,6 +413,8 @@ mod tests {
                 "/usr/bin/env",
                 "CLAUDE_CONFIG_DIR=/home/m/.claude-accounts/work",
                 "/home/m/.local/bin/claude",
+                "--name",
+                "Brain Dev; $(rm -rf ~)",
                 "--remote-control",
                 "Brain Dev; $(rm -rf ~)",
                 "-r",

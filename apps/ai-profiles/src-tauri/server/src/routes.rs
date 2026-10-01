@@ -985,18 +985,36 @@ pub(crate) fn resume_held(
                 ),
             )
         })?;
-    let window_name = tmux::window_name(
-        info.custom_title
-            .as_deref()
-            .or(info.ai_title.as_deref())
-            .unwrap_or(""),
-        &format!("claude-{}", &id[..8]),
-    );
+    // Named after what the app lists it as, generated title included, else
+    // its folder, so the Claude app, the registry and the list agree, rather
+    // than something Remote Control makes up.
+    let listed = info.title().or_else(|| {
+        cwd.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+    });
     let suffix = state
         .store
         .settings()
         .unwrap_or_default()
         .remote_control_suffix;
+    let remote_control_name = listed
+        .clone()
+        .map(|name| launch::with_host_suffix(name, suffix.as_deref()));
+    // A session resumed keeps its title as its Remote Control name, whatever
+    // name it's started with: to take the server's name, it's renamed first,
+    // the way a rename of a stopped session is.
+    if let Some(name) = remote_control_name
+        .as_deref()
+        .filter(|name| Some(*name) != listed.as_deref())
+    {
+        if let Err(err) = crate::rename::rename_stopped(&transcript, &id, name) {
+            eprintln!("could not name {id} {name}: {err}");
+        }
+    }
+    let window_name = tmux::window_name(
+        remote_control_name.as_deref().unwrap_or(""),
+        &format!("claude-{}", &id[..8]),
+    );
     let started = launch::start(
         &state.tmux,
         &Launch {
@@ -1004,16 +1022,7 @@ pub(crate) fn resume_held(
             claude: &claude,
             cwd: &cwd,
             window_name,
-            // Named after what the app lists it as, generated title included,
-            // else its folder, so the Claude app, the registry and the list
-            // agree, rather than something Remote Control makes up.
-            remote_control_name: info
-                .title()
-                .or_else(|| {
-                    cwd.file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                })
-                .map(|name| launch::with_host_suffix(name, suffix.as_deref())),
+            remote_control_name,
             resume: Some(id.clone()),
             trust_folder,
         },

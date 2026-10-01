@@ -1,6 +1,6 @@
 [package]
 name = "remote-control-conductor-server"
-version = "0.6.2"
+version = "0.6.3"
 description = "Runs on a Linux machine and lets Remote Control Conductor list its Claude accounts and sessions, and start or resume them in tmux with Remote Control."
 license = "MIT"
 edition = "2021"
