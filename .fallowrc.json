@@ -1,9 +1,5 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
-  // The Claude Code plugin runs in Claude Code's mod runtime, not this workspace: its `claude-code`
-  // imports and `claude plugin test` files mean nothing here. `claude plugin validate` and
-  // `claude plugin test` check it instead.
-  "ignorePatterns": ["plugins/**"],
   "ignoreExports": [
     // shadcn primitives: kept identical to `shadcn add` output, so unused sub-parts are expected.
     { "file": "apps/ai-profiles/src/design/ui/**", "exports": ["*"] }

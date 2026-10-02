@@ -1,9 +1,0 @@
-{
-  "name": "conductor",
-  "version": "0.1.0",
-  "description": "Remote Control Conductor's hosts, profiles and sessions in a Claude Code pane",
-  "author": { "name": "Marcus Adolfsson" },
-  "homepage": "https://github.com/marcusadolfsson/remote-control-conductor",
-  "license": "MIT",
-  "types": "./types/index.d.ts"
-}
