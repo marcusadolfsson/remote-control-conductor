@@ -468,6 +468,12 @@ export type RcServer = {
   environmentUrl: string | null
   /** It's waiting for someone in its window before it connects. */
   attention: Attention | null
+  /** The Claude Code it runs, when its host can tell. */
+  claudeVersion?: string | null
+  /** A newer Claude Code is installed: restarting the server runs it. */
+  updatePending?: boolean
+  /** That newer version, while an update is pending. */
+  installedVersion?: string | null
 }
 
 export type StartRcServer = {

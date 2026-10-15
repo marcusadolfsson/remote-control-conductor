@@ -5,7 +5,13 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ToastProvider } from '@/design'
-import { openExternalUrl, remoteListRcServers, remoteStopRcServer, remoteWindowScreen } from '@/lib/commands'
+import {
+  openExternalUrl,
+  remoteListRcServers,
+  remoteStartRcServer,
+  remoteStopRcServer,
+  remoteWindowScreen,
+} from '@/lib/commands'
 import { renderWithQuery } from '@/test/render-with-query'
 
 import { RemoteRcServers } from './remote-rc-servers'
@@ -16,6 +22,7 @@ vi.mock('@/lib/commands', async () => {
     ...actual,
     remoteListRcServers: vi.fn(),
     remoteStopRcServer: vi.fn(async () => true),
+    remoteStartRcServer: vi.fn(async () => ({ server: {}, alreadyRunning: false, attachCommand: null })),
     remoteOpenInTerminal: vi.fn(async () => null),
     remoteWindowScreen: vi.fn(async () => ({
       text: 'Trust /home/marcus/proj? [y/N]',
@@ -82,6 +89,25 @@ describe('RemoteRcServers', () => {
     expect(screen.getByText(/the 2 sessions it serves stop answering/)).toBeInTheDocument()
     const stops = screen.getAllByRole('button', { name: /^Stop/ })
     await userEvent.click(stops[stops.length - 1] as HTMLElement)
+    expect(remoteStopRcServer).toHaveBeenCalledWith({ hostId: 'h1', account: 'Misc', pid: 4121 })
+  })
+
+  it('restarts a server on an older Claude Code to update it, after asking', async () => {
+    vi.mocked(remoteListRcServers).mockResolvedValue([
+      server({ claudeVersion: '2.1.293', updatePending: true, installedVersion: '2.1.300' }),
+    ])
+    renderWithQuery(<RemoteRcServers host={host} account="Misc" />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Restart to update' }))
+    expect(await screen.findByText(/installed now \(2\.1\.293 → 2\.1\.300\)/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^Restart/ }))
+    await vi.waitFor(() =>
+      expect(remoteStartRcServer).toHaveBeenCalledWith({
+        hostId: 'h1',
+        account: 'Misc',
+        request: { folder: '/home/marcus/proj', name: 'proj (xJOPA)', spawn: 'worktree', trustFolder: false },
+      }),
+    )
     expect(remoteStopRcServer).toHaveBeenCalledWith({ hostId: 'h1', account: 'Misc', pid: 4121 })
   })
 

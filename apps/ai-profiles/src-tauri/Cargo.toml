@@ -74,6 +74,8 @@ tauri-plugin-window-state = "2"
 # Focus / reopen a specific already-running Claude instance by PID
 # (single-instance launch behaviour). Already present transitively via tauri.
 [target.'cfg(target_os = "macos")'.dependencies]
+# proc_pidpath: which Claude Code a Remote Control server runs.
+libc = "0.2"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = [
     "NSBitmapImageRep",

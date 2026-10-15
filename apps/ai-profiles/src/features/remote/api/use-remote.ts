@@ -137,6 +137,31 @@ export function useStopRcServer(hostId: string, account: string) {
   })
 }
 
+/**
+ * Restart a Remote Control server on the Claude Code installed now: stop it,
+ * then start it again in its folder, with its name and spawn mode. The
+ * sessions it serves come back with it.
+ */
+export function useRestartRcServer(hostId: string, account: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (server: RcServer) => {
+      await remoteStopRcServer({ hostId, account, pid: server.pid })
+      return remoteStartRcServer({
+        hostId,
+        account,
+        request: {
+          folder: server.folder,
+          name: server.name ?? undefined,
+          spawn: server.spawn === 'worktree' ? 'worktree' : 'same-dir',
+          trustFolder: false,
+        },
+      })
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['remote', hostId, 'accounts', account] }),
+  })
+}
+
 export function usePairHost() {
   const queryClient = useQueryClient()
   return useMutation({
