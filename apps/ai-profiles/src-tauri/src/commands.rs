@@ -624,6 +624,30 @@ pub fn local_open_in_terminal(window_id: String) -> AppResult<()> {
     crate::local_rc::open_in_terminal(&window_id)
 }
 
+/// Whether other Macs can pair with this one for its Remote Control servers.
+#[tauri::command(async)]
+pub fn sharing_status() -> AppResult<crate::host_api::SharingStatus> {
+    crate::host_api::status()
+}
+
+/// Share this Mac's Remote Control servers with paired Macs, or stop.
+#[tauri::command(async)]
+pub fn sharing_set_enabled(enabled: bool) -> AppResult<crate::host_api::SharingStatus> {
+    crate::host_api::set_enabled(enabled)
+}
+
+/// A pairing code for another Mac to add this one as a host.
+#[tauri::command(async)]
+pub fn sharing_new_code() -> AppResult<crate::host_api::SharingCode> {
+    crate::host_api::new_code()
+}
+
+/// Unpair a Mac that added this one.
+#[tauri::command(async)]
+pub fn sharing_forget(id: String) -> AppResult<crate::host_api::SharingStatus> {
+    crate::host_api::forget(&id)
+}
+
 /// End a running remote session. `true` if it was running.
 #[tauri::command]
 pub async fn remote_stop_session(

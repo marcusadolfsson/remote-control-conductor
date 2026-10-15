@@ -10,6 +10,7 @@ import { DataSection, DataSectionFallback } from './data-section'
 import { McpSection, McpSectionFallback } from './mcp-section'
 import { RemoteHostsSection, RemoteHostsSectionFallback } from './remote-hosts-section'
 import { SettingsFooterRow } from './settings-footer-row'
+import { ShareThisMacSection, ShareThisMacSectionFallback } from './share-this-mac-section'
 import { SystemSection, SystemSectionFallback } from './system-section'
 
 type Props = {
@@ -48,6 +49,9 @@ export function SettingsView({ onClose, onOpenMigration, onOpenAbout }: Props) {
       </Suspense>
       <Suspense fallback={<RemoteHostsSectionFallback />}>
         <RemoteHostsSection />
+      </Suspense>
+      <Suspense fallback={<ShareThisMacSectionFallback />}>
+        <ShareThisMacSection />
       </Suspense>
       <Suspense fallback={<McpSectionFallback />}>
         <McpSection />

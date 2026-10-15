@@ -29,6 +29,7 @@ use crate::profiles;
 
 pub use folders::list as list_dirs;
 use screen::Screen;
+pub use tmux::SESSION as TMUX_SESSION;
 use tmux::{Tmux, Window};
 
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -50,6 +51,18 @@ pub fn list(profile: &str) -> Vec<RcServer> {
         .collect();
     servers.sort_by(|a, b| a.folder.cmp(&b.folder));
     servers
+}
+
+/// The installed tmux's version (`tmux 3.5a`), or none without tmux.
+pub fn tmux_version() -> Option<String> {
+    let output = Command::new(Tmux::installed()?.binary())
+        .arg("-V")
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 /// Start a server in `request.folder` as `profile`, in a tmux window of its

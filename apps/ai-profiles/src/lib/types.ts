@@ -638,6 +638,26 @@ export type McpCommand = {
 
 export type McpInstallStep = { status: 'added' } | { status: 'alreadyThere' } | { status: 'failed'; reason: string }
 
+/** Whether other Macs can pair with this one for its Remote Control servers. */
+export type SharingStatus = {
+  enabled: boolean
+  /** Answering on `port` now. */
+  listening: boolean
+  /** Why it couldn't start listening, while enabled. */
+  error: string | null
+  port: number
+  clients: Array<{ id: string; name: string; pairedAt: string }>
+}
+
+/** A pairing code for another Mac to add this one as a host. */
+export type SharingCode = {
+  code: string
+  /** `host:port`, as the other Mac tries them. */
+  hosts: Array<string>
+  /** `AB:CD:…` */
+  fingerprint: string
+}
+
 /** How adding the MCP server to one Claude profile went. */
 export type McpInstalled = {
   profile: string

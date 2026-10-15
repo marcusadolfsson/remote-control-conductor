@@ -50,6 +50,10 @@ pub struct AppState {
     /// stays away until a session not among them needs repair.
     #[serde(default)]
     pub dismissed_repair_sessions: BTreeMap<String, Vec<String>>,
+    /// Whether another Mac may pair with this one for its Remote Control
+    /// servers (see `host_api`). Off until turned on in Settings.
+    #[serde(default)]
+    pub share_rc_servers: bool,
 }
 
 /// Renames one app's stock-install entry. An empty (or all-whitespace) name
@@ -271,6 +275,7 @@ mod tests {
             dock_icon_acknowledged_at: Some("2026-05-21T09:30:00Z".into()),
             default_profile_names: BTreeMap::from([(AppKind::Claude, "Personal".into())]),
             dismissed_repair_sessions: BTreeMap::from([("p1".into(), vec!["s1".into()])]),
+            share_rc_servers: true,
         };
         save(&state).unwrap();
         let loaded = load().unwrap();
@@ -291,6 +296,7 @@ mod tests {
             dock_icon_acknowledged_at: Some("acknowledged".into()),
             default_profile_names: BTreeMap::new(),
             dismissed_repair_sessions: BTreeMap::new(),
+            share_rc_servers: false,
         })
         .unwrap();
 
@@ -321,6 +327,7 @@ mod tests {
             dock_icon_acknowledged_at: None,
             default_profile_names: BTreeMap::new(),
             dismissed_repair_sessions: BTreeMap::new(),
+            share_rc_servers: false,
         })
         .unwrap();
 
@@ -384,6 +391,7 @@ mod tests {
             dock_icon_acknowledged_at: None,
             default_profile_names: BTreeMap::new(),
             dismissed_repair_sessions: BTreeMap::new(),
+            share_rc_servers: false,
         })
         .unwrap();
         let after = apply(AppStatePatch {

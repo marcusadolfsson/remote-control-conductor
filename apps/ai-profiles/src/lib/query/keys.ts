@@ -23,6 +23,7 @@ export const queryKeys = {
   // dehydrates usage), and outside `profiles` so a local reorder doesn't
   // refetch a machine across the network.
   mcpCommand: ['mcp-command'] as const,
+  sharing: ['sharing'] as const,
   remote: {
     all: ['remote'] as const,
     hosts: ['remote', 'hosts'] as const,
