@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.8.0](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.8.0) (2026-10-15)
+
+### Added
+
+* **local:** Settings → Share this Mac lets Remote Control Conductor on another Mac add this one as a host, over Tailscale, to list, start, stop and show its Remote Control servers. Turn it on, make a pairing code, and paste it into Pair a host on the other Mac; paired Macs can be unpaired there. It answers while the app is open; the servers keep running without it
+* **remote:** the sessions a Remote Control server started are listed under that server, on a profile's page, on the Remote Control page and in a profile's Remote Control section
+* **remote:** a Remote Control server running an older Claude Code than the one installed is marked, with Restart to update (this Mac's now; a host's from server 0.11)
+* **remote:** Restart all for a profile's Remote Control servers, saying how many wait on an update
+
+### Changed
+
+* **remote:** a shared Mac's profile offers Start server… instead of New session, and no sign-in, switch or delete
+
+### Fixed
+
+* **remote:** a Remote Control server's buttons line up on the right, and a long folder is cut short instead of running out of the panel
+
 ## [0.7.0](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.7.0) (2026-10-15)
 
 ### Added
