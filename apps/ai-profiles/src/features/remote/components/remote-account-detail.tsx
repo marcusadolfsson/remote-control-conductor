@@ -15,7 +15,6 @@ import { LaunchResultDialog } from './launch-result-dialog'
 import { NewRemoteSessionDialog } from './new-remote-session-dialog'
 import { RcServerDialog } from './rc-server-dialog'
 import { RemoteProfileHeader } from './remote-profile-header'
-import { RemoteRcServers } from './remote-rc-servers'
 import { RemoteSessions } from './remote-sessions'
 import { SignInDialog } from './sign-in-dialog'
 import { SignOutDialog } from './sign-out-dialog'
@@ -105,16 +104,13 @@ function Detail({ host, accountName, onRenamed }: DetailProps) {
           {host.label} has no profile called {accountName} any more.
         </p>
       ) : (
-        <>
-          <RemoteRcServers host={host} account={accountName} home={info.data?.home} />
-          <RemoteSessions
-            host={host}
-            account={accountName}
-            email={account?.account?.email ?? null}
-            home={info.data?.home}
-            onResult={(launch, under) => setResult({ launch, account: under ?? accountName })}
-          />
-        </>
+        <RemoteSessions
+          host={host}
+          account={accountName}
+          email={account?.account?.email ?? null}
+          home={info.data?.home}
+          onResult={(launch, under) => setResult({ launch, account: under ?? accountName })}
+        />
       )}
       <ProfileDialogs
         host={host}
