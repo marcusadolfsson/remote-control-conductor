@@ -4,7 +4,8 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { openExternalUrl, remoteListRcServers, remoteOpenInTerminal, remoteStopRcServer } from '@/lib/commands'
+import { ToastProvider } from '@/design'
+import { openExternalUrl, remoteListRcServers, remoteStopRcServer, remoteWindowScreen } from '@/lib/commands'
 import { renderWithQuery } from '@/test/render-with-query'
 
 import { RemoteRcServers } from './remote-rc-servers'
@@ -16,6 +17,13 @@ vi.mock('@/lib/commands', async () => {
     remoteListRcServers: vi.fn(),
     remoteStopRcServer: vi.fn(async () => true),
     remoteOpenInTerminal: vi.fn(async () => null),
+    remoteWindowScreen: vi.fn(async () => ({
+      text: 'Trust /home/marcus/proj? [y/N]',
+      width: 80,
+      height: 24,
+      remoteControl: false,
+      sessionId: null,
+    })),
     openExternalUrl: vi.fn(async () => {}),
   }
 })
@@ -51,7 +59,11 @@ describe('RemoteRcServers', () => {
 
   it('lists a profile’s servers, opens one on claude.ai, and stops one after asking', async () => {
     vi.mocked(remoteListRcServers).mockResolvedValue([server()])
-    renderWithQuery(<RemoteRcServers host={host} account="Misc" home="/home/marcus" />)
+    renderWithQuery(
+      <ToastProvider>
+        <RemoteRcServers host={host} account="Misc" home="/home/marcus" />
+      </ToastProvider>,
+    )
 
     expect(await screen.findByText('proj (xJOPA)')).toBeInTheDocument()
     expect(screen.getByText(/~\/proj · a worktree per session · 2 sessions/)).toBeInTheDocument()
@@ -59,11 +71,11 @@ describe('RemoteRcServers', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Open' }))
     expect(openExternalUrl).toHaveBeenCalledWith('https://claude.ai/code?environment=env_01abc')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Open its window in Terminal' }))
-    expect(remoteOpenInTerminal).toHaveBeenCalledWith({
-      hostId: 'h1',
-      attachCommand: 'tmux attach -t ai \\; select-window -t @9',
-    })
+    // Its window opens here, live, as a session's does.
+    await userEvent.click(screen.getByRole('button', { name: 'Open its window' }))
+    expect(await screen.findByText(/Trust \/home\/marcus\/proj\? \[y\/N\]/)).toBeInTheDocument()
+    expect(remoteWindowScreen).toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
 
     await userEvent.click(screen.getByRole('button', { name: 'Stop' }))
     expect(await screen.findByText('Stop this Remote Control server?')).toBeInTheDocument()

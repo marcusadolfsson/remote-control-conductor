@@ -8,11 +8,11 @@ import { Button, Dialog, Kbd } from '@/design'
 import { sessionErrorMessage } from '@/features/profiles/components/session-error-message'
 import { sessionPanelClasses, sessionRowClasses } from '@/features/profiles/components/session-row-base'
 import { shortenHomePath } from '@/features/profiles/components/shorten-home-path'
-import { openExternalUrl, remoteOpenInTerminal } from '@/lib/commands'
+import { openExternalUrl } from '@/lib/commands'
 
 import { useRemoteRcServers, useStopRcServer } from '../api/use-remote'
-import { tmuxAttach } from '../lib/tmux-attach'
 import { folderName } from './new-remote-session-dialog'
+import { SessionWindowDialog } from './session-window-dialog'
 
 type RemoteRcServersProps = {
   /** The host the profile is on. */
@@ -32,6 +32,7 @@ export function RemoteRcServers({ host, account, home }: RemoteRcServersProps) {
   const servers = useRemoteRcServers(host.id, account)
   const stop = useStopRcServer(host.id, account)
   const [stopping, setStopping] = useState<RcServer | null>(null)
+  const [viewing, setViewing] = useState<RcServer | null>(null)
   const list = servers.data ?? []
   if (list.length === 0) {
     return null
@@ -48,10 +49,10 @@ export function RemoteRcServers({ host, account, home }: RemoteRcServersProps) {
           {list.map((server) => (
             <RcServerRow
               key={server.pid}
-              host={host}
               server={server}
               home={home}
               stopping={stop.isPending && stop.variables === server.pid}
+              onView={() => setViewing(server)}
               onStop={() => setStopping(server)}
             />
           ))}
@@ -61,6 +62,20 @@ export function RemoteRcServers({ host, account, home }: RemoteRcServersProps) {
         <p role="alert" className="mt-1.5 px-0.5 text-meta text-red">
           {sessionErrorMessage(stop.error, 'The Remote Control server could not be stopped.')}
         </p>
+      ) : null}
+      {viewing ? (
+        <SessionWindowDialog
+          host={host}
+          account={account}
+          session={{
+            id: String(viewing.pid),
+            title: viewing.name ?? folderName(viewing.folder),
+            lastPrompt: null,
+            window: viewing.window,
+          }}
+          ours
+          onClose={() => setViewing(null)}
+        />
       ) : null}
       <StopServerDialog
         server={stopping}
@@ -75,20 +90,20 @@ export function RemoteRcServers({ host, account, home }: RemoteRcServersProps) {
 }
 
 type RcServerRowProps = {
-  /** The host it runs on. */
-  host: RemoteHost
   /** The server. */
   server: RcServer
   /** The host's home, to shorten its folder by. */
   home?: string
   /** It's being stopped now. */
   stopping: boolean
+  /** Shows its tmux window, here. */
+  onView: () => void
   /** Asks to stop it. */
   onStop: () => void
 }
 
 /** One server: its name and folder, how it places sessions, how many it serves, and what can be done with it. */
-function RcServerRow({ host, server, home, stopping, onStop }: RcServerRowProps) {
+function RcServerRow({ server, home, stopping, onView, onStop }: RcServerRowProps) {
   const detail = [
     shortenHomePath(server.folder, home),
     server.spawn === 'worktree' ? 'a worktree per session' : 'sessions in this folder',
@@ -110,7 +125,7 @@ function RcServerRow({ host, server, home, stopping, onStop }: RcServerRowProps)
             <p className="truncate text-meta text-muted">{detail}</p>
           </div>
         </div>
-        <RcServerActions host={host} server={server} stopping={stopping} onStop={onStop} />
+        <RcServerActions server={server} stopping={stopping} onView={onView} onStop={onStop} />
       </div>
       {server.attention ? (
         <p className="mt-1.5 whitespace-pre-line text-meta text-amber">{server.attention.text}</p>
@@ -121,9 +136,8 @@ function RcServerRow({ host, server, home, stopping, onStop }: RcServerRowProps)
 
 type RcServerActionsProps = Omit<RcServerRowProps, 'home'>
 
-/** Its page on claude.ai, its tmux window in Terminal, and Stop, for the ones the host started. */
-function RcServerActions({ host, server, stopping, onStop }: RcServerActionsProps) {
-  const attach = tmuxAttach(server)
+/** Its page on claude.ai, and its tmux window and Stop, for the ones the host started. */
+function RcServerActions({ server, stopping, onView, onStop }: RcServerActionsProps) {
   return (
     <div className="flex shrink-0 items-center gap-1">
       {server.environmentUrl ? (
@@ -137,13 +151,17 @@ function RcServerActions({ host, server, stopping, onStop }: RcServerActionsProp
           Open
         </Button>
       ) : null}
-      {attach ? (
+      {server.window ? (
         <Button
           variant="ghost"
           size="sm"
-          aria-label="Open its window in Terminal"
-          title={server.attention ? 'Answer it in its tmux window, in Terminal' : 'Its tmux window, in Terminal'}
-          onClick={() => void remoteOpenInTerminal({ hostId: host.id, attachCommand: attach })}
+          aria-label="Open its window"
+          title={
+            server.attention
+              ? 'Answer it in its tmux window, here or in Terminal'
+              : 'Its tmux window, here or in Terminal'
+          }
+          onClick={onView}
         >
           <SquareTerminal aria-hidden className="h-3.5 w-3.5" />
         </Button>
