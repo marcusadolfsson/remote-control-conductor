@@ -8,6 +8,7 @@ import { SidebarProfileRow } from '@/features/profiles/components/sidebar-profil
 
 import { useAllRemoteControlSessions } from '../api/use-remote'
 import { remoteSelectionId } from '../lib/remote-selection'
+import { ConnectedSessions } from './connected-sessions'
 import { OpenInClaudeButton } from './open-in-claude-button'
 
 /**
@@ -48,7 +49,7 @@ function byAccount(sessions: Array<RemoteControlSession>): Array<[string | null,
 
 /**
  * Every session on the paired hosts with Remote Control connected, by the
- * account it runs on, each ready to open in that account's Claude app. Where
+ * account it runs on and, within it, the server that started it, each ready to open in that account's Claude app. Where
  * a session is, its host and profile, is a click away.
  */
 export function RemoteControlOverview({ onSelectProfile }: { onSelectProfile: (id: string) => void }) {
@@ -76,27 +77,30 @@ export function RemoteControlOverview({ onSelectProfile }: { onSelectProfile: (i
             </div>
             <div className={sessionPanelClasses}>
               <ul>
-                {connected.map(({ host, account, session, email: sessionEmail }) => (
-                  <SessionRowBase
-                    key={`${host.id}/${account}/${session.id}`}
-                    title={session.title ?? session.id}
-                    badges={
-                      <button
-                        type="button"
-                        title={`Go to ${account} on ${host.label}`}
-                        className="inline-flex shrink-0 cursor-pointer items-center rounded-[5px] border border-border-soft px-1.5 py-px font-mono text-[10px] font-medium leading-[1.5] text-muted-strong hover:text-ink"
-                        onClick={() => onSelectProfile(remoteSelectionId(host.id, account))}
-                      >
-                        {host.label}/{account}
-                      </button>
-                    }
-                    folder={session.cwd}
-                    at={session.updatedAt}
-                    actions={
-                      <OpenInClaudeButton email={sessionEmail} bridgeSessionId={session.bridgeSessionId ?? ''} />
-                    }
-                  />
-                ))}
+                <ConnectedSessions
+                  sessions={connected}
+                  row={({ host, account, session, email: sessionEmail }) => (
+                    <SessionRowBase
+                      key={`${host.id}/${account}/${session.id}`}
+                      title={session.title ?? session.id}
+                      badges={
+                        <button
+                          type="button"
+                          title={`Go to ${account} on ${host.label}`}
+                          className="inline-flex shrink-0 cursor-pointer items-center rounded-[5px] border border-border-soft px-1.5 py-px font-mono text-[10px] font-medium leading-[1.5] text-muted-strong hover:text-ink"
+                          onClick={() => onSelectProfile(remoteSelectionId(host.id, account))}
+                        >
+                          {host.label}/{account}
+                        </button>
+                      }
+                      folder={session.cwd}
+                      at={session.updatedAt}
+                      actions={
+                        <OpenInClaudeButton email={sessionEmail} bridgeSessionId={session.bridgeSessionId ?? ''} />
+                      }
+                    />
+                  )}
+                />
               </ul>
             </div>
           </section>

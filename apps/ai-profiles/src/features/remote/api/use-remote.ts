@@ -1,5 +1,6 @@
 import type {
   NewRemoteSession,
+  RcServer,
   RemoteAccount,
   RemoteHost,
   RemoteSession,
@@ -47,6 +48,8 @@ import {
   remoteTransferSession,
 } from '@/lib/commands'
 import { queryKeys } from '@/lib/query/keys'
+
+import { servingServer } from '../lib/served'
 
 /**
  * The paired hosts. A local file, so it suspends like the profile list.
@@ -358,6 +361,8 @@ export type RemoteControlSession = {
   account: string
   email: string | null
   session: RemoteSession
+  /** The Remote Control server that started it, if one did and is listed. */
+  server: RcServer | null
 }
 
 /**
@@ -380,6 +385,14 @@ export function useAllRemoteControlSessions(
       refetchInterval: 15_000,
     })),
   })
+  const servers = useQueries({
+    queries: profiles.map((profile) => ({
+      queryKey: queryKeys.remote.rcServers(profile.host.id, profile.account.name),
+      queryFn: () => remoteListRcServers({ hostId: profile.host.id, account: profile.account.name }),
+      retry: 0,
+      refetchInterval: 15_000,
+    })),
+  })
   return profiles.flatMap((profile, index) =>
     (results[index]?.data ?? [])
       .filter((session) => session.running && session.remoteControl && session.bridgeSessionId !== null)
@@ -388,6 +401,7 @@ export function useAllRemoteControlSessions(
         account: profile.account.name,
         email: profile.account.account?.email ?? null,
         session,
+        server: servingServer(session, servers[index]?.data ?? []) ?? null,
       })),
   )
 }
