@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.7.0) (2026-10-15)
+
+### Added
+
+* **local:** each Claude profile on this Mac has Remote Control servers: Start… runs `claude remote-control` in a folder as that profile, in tmux, so the Claude apps on your other devices can start sessions there, in as many folders as you like (Claude Desktop stops at 6). Each one can be opened on claude.ai, shown and typed into here or in Terminal, and stopped. Needs tmux (`brew install tmux`)
+* **remote:** a host's profile has Remote Control servers too, started, shown and stopped the same way
+* **local:** a profile whose sign-in token has run out is renewed before its server starts, and told to sign in again if that can't be done
+
+### Changed
+
+* **plugin:** the Claude Code plugin is its own project now, Remote Control CLI Servers
+
 ## [0.6.3](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.6.3) (2026-09-30)
 
 ### Added
