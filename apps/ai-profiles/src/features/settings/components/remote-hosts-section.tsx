@@ -18,8 +18,8 @@ import { RemoteControlSuffixField } from './remote-control-suffix-field'
 const headingClasses = 'font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-muted-strong'
 
 /**
- * Linux machines running remote-control-conductor-server. Pairing one adds a section for
- * it to the sidebar with its Claude accounts.
+ * Linux machines running remote-control-conductor-server, and other Macs that share
+ * theirs. Pairing one adds a section for it to the sidebar with its Claude accounts.
  */
 export function RemoteHostsSection() {
   const hosts = useRemoteHosts()
@@ -45,7 +45,8 @@ export function RemoteHostsSection() {
         {hosts.length === 0 ? (
           <p className="px-4 py-3 text-[13px] text-muted">
             None yet. Install remote-control-conductor-server on a Linux machine where Claude Code runs, then pair it
-            here to see its accounts and sessions.
+            here to see its accounts and sessions. For another Mac, turn on Share this Mac in its Settings and pair with
+            the code it makes.
           </p>
         ) : (
           hosts.map((host) => (
