@@ -20,6 +20,7 @@ import { sessionPanelClasses, sessionRowClasses } from '@/features/profiles/comp
 import { formatBytes } from '@/lib/format-bytes'
 
 import { useRemoteArchivedSessions, useRemoteHostInfo, useRemoteRcServers, useRemoteSessions } from '../api/use-remote'
+import { isMacHost } from '../lib/mac-host'
 import { groupByServer } from '../lib/served'
 import { installedVersionOf, restartAllLabel, restartAllTitle } from '../lib/session-labels'
 import { ConfirmEndDialog } from './confirm-end-dialog'
@@ -57,8 +58,8 @@ type SessionDialog = { kind: 'view' | 'rename' | 'move'; session: RemoteSession 
 type SessionsBodyProps = {
   /** The profile's sessions, as the host lists them. */
   sessions: ReturnType<typeof useRemoteSessions>
-  /** The host's name, for when they can't be read. */
-  hostLabel: string
+  /** The host, named when they can't be read. */
+  host: RemoteHost
   /** The lists, once there are sessions to list. */
   children: ReactNode
 }
@@ -147,7 +148,7 @@ export function RemoteSessions({ host, account, email, home, onResult }: RemoteS
     <>
       <RemoteRcServers host={host} account={account} home={home} sessionsOf={servedRows(byServer, row)} />
       <section aria-label="Sessions" className="mb-6">
-        <SessionsBody sessions={sessions} hostLabel={host.label}>
+        <SessionsBody sessions={sessions} host={host}>
           {running.length > 0 ? (
             <RunningSessions
               running={running}
@@ -265,7 +266,8 @@ function rowHandlers(session: RemoteSession, { actions, setDialog, setPending, o
 }
 
 /** The lists, or where the listing stands: loading, failed, or empty. */
-function SessionsBody({ sessions, hostLabel, children }: SessionsBodyProps) {
+function SessionsBody({ sessions, host, children }: SessionsBodyProps) {
+  const info = useRemoteHostInfo(host.id)
   if (sessions.isLoading) {
     return (
       <div className={sessionPanelClasses}>
@@ -280,7 +282,7 @@ function SessionsBody({ sessions, hostLabel, children }: SessionsBodyProps) {
       <div className={sessionPanelClasses}>
         <div className="flex items-center justify-between gap-3 px-[13px] py-[10px]">
           <p role="alert" className="text-meta text-red">
-            {sessionErrorMessage(sessions.error, `Could not read ${hostLabel}'s sessions.`)}
+            {sessionErrorMessage(sessions.error, `Could not read ${host.label}'s sessions.`)}
           </p>
           <Button
             variant="ghost"
@@ -295,6 +297,10 @@ function SessionsBody({ sessions, hostLabel, children }: SessionsBodyProps) {
     )
   }
   if ((sessions.data ?? []).length === 0) {
+    // A shared Mac has servers, never sessions of its own to list.
+    if (isMacHost(info.data)) {
+      return null
+    }
     return (
       <>
         <SessionsHeading title="Sessions" />
