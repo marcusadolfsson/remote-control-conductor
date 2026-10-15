@@ -11,7 +11,8 @@ import { sessionPanelClasses, sessionRowClasses } from '@/features/profiles/comp
 import { shortenHomePath } from '@/features/profiles/components/shorten-home-path'
 import { openExternalUrl } from '@/lib/commands'
 
-import { useRemoteRcServers, useRestartRcServer, useStopRcServer } from '../api/use-remote'
+import { useRemoteRcServers, useRestartAllRcServers, useRestartRcServer, useStopRcServer } from '../api/use-remote'
+import { restartAllServersLabel, restartAllServersTitle } from '../lib/server-labels'
 import { updateVersions } from '../lib/session-labels'
 import { folderName } from './new-remote-session-dialog'
 import { SessionWindowDialog } from './session-window-dialog'
@@ -47,7 +48,9 @@ export function RemoteRcServers({ host, account, home, onStart, sessionsOf }: Re
   }
   return (
     <section aria-label="Remote Control servers" className="mb-6">
-      <RcServersHeading count={list.length} onStart={onStart} />
+      <RcServersHeading count={list.length} onStart={onStart}>
+        <RestartAllServers host={host} account={account} servers={list} />
+      </RcServersHeading>
       {list.length === 0 ? null : (
         <div className={sessionPanelClasses}>
           <ul aria-label="Remote Control servers">
@@ -119,22 +122,80 @@ type RcServersHeadingProps = {
   count: number
   /** Starts one, when it can be started from here. */
   onStart?: () => void
+  /** More buttons, before Start…. */
+  children?: ReactNode
 }
 
 /** "Remote Control servers", how many, and Start… where they can be started here. */
-function RcServersHeading({ count, onStart }: RcServersHeadingProps) {
+function RcServersHeading({ count, onStart, children }: RcServersHeadingProps) {
   return (
     <div className="mb-2 flex min-h-7 items-center justify-between px-0.5">
       <h2 className="text-meta font-medium text-ink-soft">
         Remote Control servers
         {count > 0 ? <span className="ml-1.5 font-normal text-muted">{count}</span> : null}
       </h2>
-      {onStart ? (
-        <Button variant="ghost" size="sm" leadingIcon={<Radio className="h-3.5 w-3.5" />} onClick={onStart}>
-          Start…
-        </Button>
-      ) : null}
+      <div className="flex items-center gap-1">
+        {children}
+        {onStart ? (
+          <Button variant="ghost" size="sm" leadingIcon={<Radio className="h-3.5 w-3.5" />} onClick={onStart}>
+            Start…
+          </Button>
+        ) : null}
+      </div>
     </div>
+  )
+}
+
+type RestartAllServersProps = {
+  /** The host they run on. */
+  host: RemoteHost
+  /** The profile they run as. */
+  account: string
+  /** The profile's servers. */
+  servers: Array<RcServer>
+}
+
+/**
+ * Restart all: every server this side started, one after another, on the
+ * Claude Code installed now. Offered when there's more than one, or any
+ * waits on an update.
+ */
+function RestartAllServers({ host, account, servers }: RestartAllServersProps) {
+  const restart = useRestartAllRcServers(host.id, account)
+  const [asking, setAsking] = useState(false)
+  const ours = servers.filter((server) => server.window)
+  const outdated = ours.filter((server) => server.updatePending).length
+  if (ours.length === 0 || (ours.length === 1 && outdated === 0)) {
+    return null
+  }
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        leadingIcon={<RotateCw className="h-3.5 w-3.5" />}
+        className={outdated > 0 ? 'text-amber hover:text-amber' : undefined}
+        title={restartAllServersTitle(ours.length, outdated)}
+        disabled={restart.isPending}
+        onClick={() => setAsking(true)}
+      >
+        {restart.isPending ? 'Restarting…' : restartAllServersLabel(outdated)}
+      </Button>
+      {restart.data && restart.data.length > 0 ? (
+        <span role="alert" className="text-meta text-red" title={restart.data.join('\n')}>
+          {restart.data.length} didn't restart
+        </span>
+      ) : null}
+      <RestartAllDialog
+        open={asking}
+        count={ours.length}
+        onClose={() => setAsking(false)}
+        onConfirm={() => {
+          setAsking(false)
+          restart.mutate(ours)
+        }}
+      />
+    </>
   )
 }
 
@@ -298,6 +359,44 @@ function UpdateServerDialog({ server, onClose, onConfirm }: UpdateServerDialogPr
         {serving > 0
           ? `. The ${serving} ${serving === 1 ? 'session' : 'sessions'} it serves stop answering for a moment and come back with it.`
           : '.'}
+      </p>
+    </Dialog>
+  )
+}
+
+type RestartAllDialogProps = {
+  /** Whether it's asking. */
+  open: boolean
+  /** How many servers would restart. */
+  count: number
+  /** Leaves them as they are. */
+  onClose: () => void
+  /** Restarts them. */
+  onConfirm: () => void
+}
+
+/** Asks before restarting every server: their sessions pause while they do. */
+function RestartAllDialog({ open, count, onClose, onConfirm }: RestartAllDialogProps) {
+  return (
+    <Dialog
+      open={open}
+      title={`Restart all ${count} Remote Control servers?`}
+      onClose={onClose}
+      onSubmit={onConfirm}
+      foot={
+        <>
+          <Button variant="ghost" size="sm" trailingKbd={<Kbd>⎋</Kbd>} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="sm" trailingKbd={<Kbd>⏎</Kbd>} onClick={onConfirm}>
+            Restart all
+          </Button>
+        </>
+      }
+    >
+      <p className="text-body text-ink-soft">
+        Each starts again on the Claude Code installed now, one after another. The sessions they serve stop answering
+        for a moment and come back with them.
       </p>
     </Dialog>
   )
