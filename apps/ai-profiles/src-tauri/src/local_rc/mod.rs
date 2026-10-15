@@ -81,16 +81,33 @@ pub fn start(profile: &str, request: &StartRcServerRequest) -> AppResult<StartRc
         &spawn,
     );
     let window_name = name.clone().unwrap_or_else(|| folder_name(&folder));
-    let (window, pid) = tmux.open_window(&window_name, &folder, &argv)?;
-    for (option, value) in [
+    let tags = [
         (tmux::PROFILE_TAG, profile),
         (tmux::FOLDER_TAG, folder.as_str()),
         (tmux::NAME_TAG, name.as_deref().unwrap_or_default()),
         (tmux::SPAWN_TAG, spawn.as_str()),
-    ] {
-        tmux.tag(&window.window_id, option, value)?;
+    ];
+    let attempt = || {
+        launch(
+            &tmux,
+            &window_name,
+            &folder,
+            &argv,
+            &tags,
+            request.trust_folder,
+        )
+    };
+    // `claude remote-control` doesn't renew a sign-in whose access token has
+    // run out, as an interactive `claude` does: renew it the way the usage
+    // card does, and try once more.
+    let (window, pid) = match attempt() {
+        Err(error) if needs_sign_in(&error.message()) => {
+            renew_sign_in(profile);
+            attempt()
+        }
+        other => other,
     }
-    settle(&tmux, &window.pane_id, request.trust_folder)?;
+    .map_err(signed_out)?;
     let opened = Window {
         window,
         pane_pid: pid,
@@ -105,6 +122,63 @@ pub fn start(profile: &str, request: &StartRcServerRequest) -> AppResult<StartRc
         server,
         already_running: false,
     })
+}
+
+/// Open the server's window, tag it, and wait for it to connect or ask.
+fn launch(
+    tmux: &Tmux,
+    name: &str,
+    folder: &str,
+    argv: &[String],
+    tags: &[(&str, &str)],
+    trust: bool,
+) -> AppResult<(ai_profiles_core::api::TmuxWindow, i32)> {
+    let (window, pid) = tmux.open_window(name, folder, argv)?;
+    for (option, value) in tags {
+        tmux.tag(&window.window_id, option, value)?;
+    }
+    settle(tmux, &window.pane_id, trust)?;
+    Ok((window, pid))
+}
+
+/// Pure: whether a server exited because the profile's sign-in is missing or
+/// has run out.
+fn needs_sign_in(message: &str) -> bool {
+    [
+        "Authentication failed (401)",
+        "access token has expired",
+        "/login",
+    ]
+    .iter()
+    .any(|sign| message.contains(sign))
+}
+
+/// Have Claude Code renew `profile`'s sign-in, as the usage card does.
+/// Best-effort: starting again says whether it worked.
+fn renew_sign_in(profile: &str) {
+    let dir = match AppKind::from_default_id(profile) {
+        Some(kind) => paths::stock_cli_config_dir(crate::app_kind::spec(kind)),
+        None => paths::cli_config_dir(profile),
+    };
+    if let Ok(dir) = dir {
+        tauri::async_runtime::block_on(async {
+            use crate::usage::refresh::CliRefresher;
+            crate::usage::refresh::ClaudeCliRefresher::new()
+                .try_refresh(&dir)
+                .await;
+        });
+    }
+}
+
+/// A failure to start because the profile isn't signed in, said so, with what to do.
+fn signed_out(error: AppError) -> AppError {
+    let message = error.message();
+    if !needs_sign_in(&message) {
+        return error;
+    }
+    AppError::Validation(format!(
+        "This profile's Claude Code isn't signed in, or its sign-in has run out and couldn't be renewed. Sign it in again from its Usage card, then start the server.\n\n{message}"
+    ))
 }
 
 /// Stop server `pid` of `profile`: Ctrl+C in its window, as someone at its
@@ -436,6 +510,15 @@ mod tests {
         ];
         assert_eq!(served(&table, 812), 1);
         assert_eq!(served(&table, 1), 0);
+    }
+
+    #[test]
+    fn knows_a_server_that_needs_the_profile_signed_in() {
+        assert!(needs_sign_in(
+            "It last showed:\nError: Registration: Authentication failed (401): OAuth access token has expired."
+        ));
+        assert!(needs_sign_in("Please use `/login` to sign in"));
+        assert!(!needs_sign_in("It last showed:\nerror: unknown option"));
     }
 
     #[test]
