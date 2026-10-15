@@ -85,6 +85,21 @@ describe('RemoteRcServers', () => {
     expect(remoteStopRcServer).toHaveBeenCalledWith({ hostId: 'h1', account: 'Misc', pid: 4121 })
   })
 
+  it('lists the sessions a server serves under it', async () => {
+    vi.mocked(remoteListRcServers).mockResolvedValue([server(), server({ pid: 7, folder: '/home/marcus/idle' })])
+    renderWithQuery(
+      <RemoteRcServers
+        host={host}
+        account="Misc"
+        sessionsOf={(one) => (one.pid === 4121 ? [<li key="s1">Fix the build</li>] : undefined)}
+      />,
+    )
+
+    const served = await screen.findByRole('list', { name: 'Sessions it serves' })
+    expect(served).toHaveTextContent('Fix the build')
+    expect(screen.getAllByRole('list', { name: 'Sessions it serves' })).toHaveLength(1)
+  })
+
   it('offers no Stop for a server started elsewhere, and says what one waits on', async () => {
     vi.mocked(remoteListRcServers).mockResolvedValue([
       server({ pid: 1, folder: '/home/marcus/other', name: null, window: null, environmentUrl: null }),

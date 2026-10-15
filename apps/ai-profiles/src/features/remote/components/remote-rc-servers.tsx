@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { RcServer, RemoteHost } from '@/lib/types'
 
 import { useState } from 'react'
@@ -23,6 +24,8 @@ type RemoteRcServersProps = {
   home?: string
   /** Starting one, from a button by the heading; with it, the section shows even when there are none. */
   onStart?: () => void
+  /** The rows of the sessions a server serves, listed under it. */
+  sessionsOf?: (server: RcServer) => ReactNode
 }
 
 /**
@@ -30,7 +33,7 @@ type RemoteRcServersProps = {
  * so the Claude apps on another device can start sessions there. Nothing
  * when there are none, or the host's server is too old to say.
  */
-export function RemoteRcServers({ host, account, home, onStart }: RemoteRcServersProps) {
+export function RemoteRcServers({ host, account, home, onStart, sessionsOf }: RemoteRcServersProps) {
   const servers = useRemoteRcServers(host.id, account)
   const stop = useStopRcServer(host.id, account)
   const [stopping, setStopping] = useState<RcServer | null>(null)
@@ -53,7 +56,9 @@ export function RemoteRcServers({ host, account, home, onStart }: RemoteRcServer
                 stopping={stop.isPending && stop.variables === server.pid}
                 onView={() => setViewing(server)}
                 onStop={() => setStopping(server)}
-              />
+              >
+                {sessionsOf?.(server)}
+              </RcServerRow>
             ))}
           </ul>
         </div>
@@ -124,10 +129,12 @@ type RcServerRowProps = {
   onView: () => void
   /** Asks to stop it. */
   onStop: () => void
+  /** The rows of the sessions it serves. */
+  children?: ReactNode
 }
 
 /** One server: its name and folder, how it places sessions, how many it serves, and what can be done with it. */
-function RcServerRow({ server, home, stopping, onView, onStop }: RcServerRowProps) {
+function RcServerRow({ server, home, stopping, onView, onStop, children }: RcServerRowProps) {
   const detail = [
     shortenHomePath(server.folder, home),
     server.spawn === 'worktree' ? 'a worktree per session' : 'sessions in this folder',
@@ -154,11 +161,25 @@ function RcServerRow({ server, home, stopping, onView, onStop }: RcServerRowProp
       {server.attention ? (
         <p className="mt-1.5 whitespace-pre-line text-meta text-amber">{server.attention.text}</p>
       ) : null}
+      <ServedSessions>{children}</ServedSessions>
     </li>
   )
 }
 
-type RcServerActionsProps = Omit<RcServerRowProps, 'home'>
+/** The sessions a server serves, indented under it; nothing when there are none. */
+function ServedSessions({ children }: { children?: ReactNode }) {
+  const rows = Array.isArray(children) ? children : children ? [children] : []
+  if (rows.length === 0) {
+    return null
+  }
+  return (
+    <ul aria-label="Sessions it serves" className="mt-2 ml-6 border-l border-border-soft">
+      {rows}
+    </ul>
+  )
+}
+
+type RcServerActionsProps = Omit<RcServerRowProps, 'home' | 'children'>
 
 /** Its page on claude.ai, and its tmux window and Stop, for the ones the host started. */
 function RcServerActions({ server, stopping, onView, onStop }: RcServerActionsProps) {

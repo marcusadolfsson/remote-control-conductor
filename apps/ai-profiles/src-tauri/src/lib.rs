@@ -8,6 +8,7 @@ mod codex_rpc;
 mod commands;
 mod deps;
 mod error;
+mod host_api;
 mod inherited_env;
 mod launch;
 mod launchers;
@@ -64,6 +65,10 @@ pub fn run() {
                     }
                 }
             });
+
+            // Answer other Macs for this one's Remote Control servers, if
+            // shared.
+            host_api::start_if_shared();
 
             // Build the macOS app menu manually so we can swap the default
             // About panel for a frontend-driven dialog. Everything else here
@@ -153,6 +158,10 @@ pub fn run() {
             commands::local_window_screen,
             commands::local_window_keys,
             commands::local_open_in_terminal,
+            commands::sharing_status,
+            commands::sharing_set_enabled,
+            commands::sharing_new_code,
+            commands::sharing_forget,
             commands::remote_start_rc_server,
             commands::remote_stop_rc_server,
             commands::remote_restart_session,

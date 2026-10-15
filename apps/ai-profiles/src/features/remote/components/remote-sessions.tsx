@@ -1,5 +1,12 @@
 import type { ReactNode } from 'react'
-import type { RemoteArchivedSession, RemoteHost, RemoteLaunch, RemoteSession, RemoteTransferReport } from '@/lib/types'
+import type {
+  RcServer,
+  RemoteArchivedSession,
+  RemoteHost,
+  RemoteLaunch,
+  RemoteSession,
+  RemoteTransferReport,
+} from '@/lib/types'
 import type { Pending } from '../lib/confirm-end'
 import type { RestartProgress } from '../lib/session-labels'
 
@@ -12,12 +19,14 @@ import { sessionErrorMessage } from '@/features/profiles/components/session-erro
 import { sessionPanelClasses, sessionRowClasses } from '@/features/profiles/components/session-row-base'
 import { formatBytes } from '@/lib/format-bytes'
 
-import { useRemoteArchivedSessions, useRemoteHostInfo, useRemoteSessions } from '../api/use-remote'
+import { useRemoteArchivedSessions, useRemoteHostInfo, useRemoteRcServers, useRemoteSessions } from '../api/use-remote'
+import { groupByServer } from '../lib/served'
 import { installedVersionOf, restartAllLabel, restartAllTitle } from '../lib/session-labels'
 import { ConfirmEndDialog } from './confirm-end-dialog'
 import { MoveRemoteSessionDialog } from './move-remote-session-dialog'
 import { ServerHereDialog, useServerHere } from './rc-server-dialog'
 import { RemoteArchivedSessions } from './remote-archived-sessions'
+import { RemoteRcServers } from './remote-rc-servers'
 import { RemoteSessionRow } from './remote-session-row'
 import { RenameRemoteSessionDialog } from './rename-remote-session-dialog'
 import { SessionWindowDialog } from './session-window-dialog'
@@ -105,7 +114,8 @@ type SessionsHeadingProps = {
 }
 
 /**
- * The profile's sessions: the running ones, which can be stopped or
+ * The profile's Remote Control servers, with the sessions each serves under
+ * it, then its other sessions: the running ones, which can be stopped or
  * restarted (restarting is how a session picks up an upgraded `claude`), and
  * the previous ones, which can be resumed.
  */
@@ -118,7 +128,7 @@ export function RemoteSessions({ host, account, email, home, onResult }: RemoteS
   const [expanded, setExpanded] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const serverHere = useServerHere(host.id, account)
-  const { running, previous } = splitSessions(sessions.data)
+  const { byServer, running, previous } = useGroupedSessions(host.id, account, sessions.data)
 
   const row = (session: RemoteSession) => (
     <RemoteSessionRow
@@ -134,61 +144,91 @@ export function RemoteSessions({ host, account, email, home, onResult }: RemoteS
   )
 
   return (
-    <section aria-label="Sessions" className="mb-6">
-      <SessionsBody sessions={sessions} hostLabel={host.label}>
-        {running.length > 0 ? (
-          <RunningSessions
-            running={running}
-            progress={actions.restartingAll}
-            locked={actions.locked}
-            onRestartAll={() => setPending({ kind: 'restartAll', sessions: running })}
-            row={row}
-          />
-        ) : null}
-        {previous.length > 0 ? (
-          <div>
-            <div className={sessionPanelClasses}>
-              <ul aria-label="Previous sessions">
-                {(expanded ? previous : previous.slice(0, collapsedCount)).map(row)}
-              </ul>
-            </div>
-          </div>
-        ) : null}
-      </SessionsBody>
-      <SessionsFooter
-        previous={previous.length}
-        expanded={expanded}
-        archived={archived.data ?? []}
-        showArchived={showArchived}
-        onToggleExpanded={() => setExpanded((value) => !value)}
-        onToggleArchived={() => setShowArchived((value) => !value)}
-      />
-      <RemoteArchivedSessions
-        hostLabel={host.label}
-        home={home}
-        archived={archived.data ?? []}
-        shown={showArchived}
-        actions={actions}
-      />
-      <SessionDialogs
-        host={host}
-        account={account}
-        dialog={dialog}
-        onClose={() => setDialog(null)}
-        onMoved={actions.moved}
-      />
-      <ServerHereDialog host={host} account={account} here={serverHere} />
-      <ConfirmEndDialog
-        pending={pending}
-        hostLabel={host.label}
-        onClose={() => setPending(null)}
-        onConfirm={(confirmed) => {
-          setPending(null)
-          actions.confirmed(confirmed)
-        }}
-      />
-    </section>
+    <>
+      <RemoteRcServers host={host} account={account} home={home} sessionsOf={servedRows(byServer, row)} />
+      <section aria-label="Sessions" className="mb-6">
+        <SessionsBody sessions={sessions} hostLabel={host.label}>
+          {running.length > 0 ? (
+            <RunningSessions
+              running={running}
+              progress={actions.restartingAll}
+              locked={actions.locked}
+              onRestartAll={() => setPending({ kind: 'restartAll', sessions: running })}
+              row={row}
+            />
+          ) : null}
+          <PreviousSessions previous={previous} expanded={expanded} row={row} />
+        </SessionsBody>
+        <SessionsFooter
+          previous={previous.length}
+          expanded={expanded}
+          archived={archived.data ?? []}
+          showArchived={showArchived}
+          onToggleExpanded={() => setExpanded((value) => !value)}
+          onToggleArchived={() => setShowArchived((value) => !value)}
+        />
+        <RemoteArchivedSessions
+          hostLabel={host.label}
+          home={home}
+          archived={archived.data ?? []}
+          shown={showArchived}
+          actions={actions}
+        />
+        <SessionDialogs
+          host={host}
+          account={account}
+          dialog={dialog}
+          onClose={() => setDialog(null)}
+          onMoved={actions.moved}
+        />
+        <ServerHereDialog host={host} account={account} here={serverHere} />
+        <ConfirmEndDialog
+          pending={pending}
+          hostLabel={host.label}
+          onClose={() => setPending(null)}
+          onConfirm={(confirmed) => {
+            setPending(null)
+            actions.confirmed(confirmed)
+          }}
+        />
+      </section>
+    </>
   )
+}
+
+/** The sessions each Remote Control server serves, by its pid, then the running and previous rest. */
+function useGroupedSessions(hostId: string, account: string, sessions: Array<RemoteSession> = []) {
+  const servers = useRemoteRcServers(hostId, account)
+  const { byServer, rest } = groupByServer(sessions, servers.data)
+  return { byServer, ...splitSessions(rest) }
+}
+
+type PreviousSessionsProps = {
+  /** The sessions not running. */
+  previous: Array<RemoteSession>
+  /** Whether all show, or only the first few. */
+  expanded: boolean
+  /** A session's row. */
+  row: (session: RemoteSession) => ReactNode
+}
+
+/** The sessions not running; nothing when there are none. */
+function PreviousSessions({ previous, expanded, row }: PreviousSessionsProps) {
+  if (previous.length === 0) {
+    return null
+  }
+  return (
+    <div>
+      <div className={sessionPanelClasses}>
+        <ul aria-label="Previous sessions">{(expanded ? previous : previous.slice(0, collapsedCount)).map(row)}</ul>
+      </div>
+    </div>
+  )
+}
+
+/** The rows of the sessions each server serves. */
+function servedRows(byServer: Map<number, Array<RemoteSession>>, row: (session: RemoteSession) => ReactNode) {
+  return (server: RcServer) => byServer.get(server.pid)?.map(row)
 }
 
 /** The running sessions, and the previous ones. */

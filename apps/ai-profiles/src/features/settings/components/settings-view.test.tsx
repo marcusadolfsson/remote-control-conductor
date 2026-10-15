@@ -91,6 +91,7 @@ function primeInitialLoads({
     detect_shell: shell,
     get_app_metadata: metadata,
     remote_list_hosts: [],
+    sharing_status: { enabled: false, listening: false, error: null, port: 7443, clients: [] },
     mcp_server_command: {
       path: '/Applications/ai-profiles.app/Contents/MacOS/ai-profiles',
       claudeCode: 'claude mcp add',

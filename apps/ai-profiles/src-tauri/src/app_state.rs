@@ -54,6 +54,10 @@ pub struct AppState {
     /// Absent means the entry shows the app's brand mark and no colour.
     #[serde(default)]
     pub default_profile_colors: BTreeMap<AppKind, String>,
+    /// Whether another Mac may pair with this one for its Remote Control
+    /// servers (see `host_api`). Off until turned on in Settings.
+    #[serde(default)]
+    pub share_rc_servers: bool,
 }
 
 /// Renames one app's stock-install entry. An empty (or all-whitespace) name
@@ -299,6 +303,7 @@ mod tests {
             default_profile_names: BTreeMap::from([(AppKind::Claude, "Personal".into())]),
             dismissed_repair_sessions: BTreeMap::from([("p1".into(), vec!["s1".into()])]),
             default_profile_colors: BTreeMap::from([(AppKind::Claude, "#6a9bcc".into())]),
+            share_rc_servers: true,
         };
         save(&state).unwrap();
         let loaded = load().unwrap();
@@ -320,6 +325,7 @@ mod tests {
             default_profile_names: BTreeMap::new(),
             dismissed_repair_sessions: BTreeMap::new(),
             default_profile_colors: BTreeMap::new(),
+            share_rc_servers: false,
         })
         .unwrap();
 
@@ -351,6 +357,7 @@ mod tests {
             default_profile_names: BTreeMap::new(),
             dismissed_repair_sessions: BTreeMap::new(),
             default_profile_colors: BTreeMap::new(),
+            share_rc_servers: false,
         })
         .unwrap();
 
@@ -415,6 +422,7 @@ mod tests {
             default_profile_names: BTreeMap::new(),
             dismissed_repair_sessions: BTreeMap::new(),
             default_profile_colors: BTreeMap::new(),
+            share_rc_servers: false,
         })
         .unwrap();
         let after = apply(AppStatePatch {

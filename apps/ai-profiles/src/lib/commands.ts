@@ -41,6 +41,8 @@ import type {
   RepairReport,
   SessionAction,
   SessionList,
+  SharingCode,
+  SharingStatus,
   Shell,
   StartRcServer,
   StartRcServerResult,
@@ -471,6 +473,24 @@ export async function localOpenInTerminal(windowId: string): Promise<null> {
 
 export function remoteOpenInTerminal(input: { hostId: string; attachCommand: string }): Promise<string | null> {
   return invoke<string | null>('remote_open_in_terminal', input)
+}
+
+export function sharingStatus(): Promise<SharingStatus> {
+  return invoke<SharingStatus>('sharing_status')
+}
+
+/** Share this Mac's Remote Control servers with paired Macs, or stop. */
+export function sharingSetEnabled(enabled: boolean): Promise<SharingStatus> {
+  return invoke<SharingStatus>('sharing_set_enabled', { enabled })
+}
+
+export function sharingNewCode(): Promise<SharingCode> {
+  return invoke<SharingCode>('sharing_new_code')
+}
+
+/** Unpairs a Mac that added this one. */
+export function sharingForget(id: string): Promise<SharingStatus> {
+  return invoke<SharingStatus>('sharing_forget', { id })
 }
 
 export function mcpServerCommand(): Promise<McpCommand> {
