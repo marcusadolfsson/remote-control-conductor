@@ -261,12 +261,12 @@ async fn start() -> Box {
     }
 }
 
+/// A different number for each test in this process. Not the clock: macOS
+/// counts only microseconds, so its nanoseconds modulo 1000 are always 0 and
+/// every test would share one tmux server.
 fn rand_suffix() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .subsec_nanos() as u64
-        % 1000
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 1000
 }
 
 #[tokio::test(flavor = "multi_thread")]
