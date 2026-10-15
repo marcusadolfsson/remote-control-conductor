@@ -146,7 +146,7 @@ function RcServerRow({ server, home, stopping, onView, onStop, children }: RcSer
   return (
     <li className={cn(sessionRowClasses, 'flex-col items-stretch gap-0')}>
       <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <Radio
             aria-hidden
             className={server.attention ? 'h-4 w-4 shrink-0 text-amber' : 'h-4 w-4 shrink-0 text-blue'}

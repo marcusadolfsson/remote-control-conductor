@@ -2,7 +2,7 @@ import type { RemoteAccount, RemoteHost } from '@/lib/types'
 
 import { Fragment } from 'react'
 
-import { MoreHorizontal, Plus, Server } from 'lucide-react'
+import { MoreHorizontal, Plus, Radio, Server } from 'lucide-react'
 
 import { cn } from '@/design'
 import {
@@ -18,6 +18,8 @@ import {
   ProfileSwatch,
 } from '@/features/profiles/components/profile-detail-header'
 
+import { useRemoteHostInfo } from '../api/use-remote'
+import { isMacHost } from '../lib/mac-host'
 import { sublineParts } from '../lib/profile-subline'
 
 /** A dialog the profile's header opens. */
@@ -63,6 +65,8 @@ const toneClasses = { danger: 'text-red', warning: 'text-amber', quiet: 'text-mu
  */
 export function RemoteProfileHeader({ host, name, account, offline, onOpen }: RemoteProfileHeaderProps) {
   const color = host.profiles?.[name]?.color ?? null
+  // A shared Mac runs servers, not sessions: its main action starts one.
+  const macHost = isMacHost(useRemoteHostInfo(host.id).data)
   return (
     <ProfileDetailHeader
       name={name}
@@ -73,13 +77,17 @@ export function RemoteProfileHeader({ host, name, account, offline, onOpen }: Re
           type="button"
           className={headerControlClasses}
           disabled={offline || !account}
-          onClick={() => onOpen('start')}
+          onClick={() => onOpen(macHost ? 'server' : 'start')}
         >
-          <Plus aria-hidden className="h-3.5 w-3.5" strokeWidth={1.9} />
-          New session
+          {macHost ? (
+            <Radio aria-hidden className="h-3.5 w-3.5" strokeWidth={1.9} />
+          ) : (
+            <Plus aria-hidden className="h-3.5 w-3.5" strokeWidth={1.9} />
+          )}
+          {macHost ? 'Start server…' : 'New session'}
         </button>
       }
-      menu={account && !offline ? <ProfileMenu account={account} onOpen={onOpen} /> : undefined}
+      menu={account && !offline && !macHost ? <ProfileMenu account={account} onOpen={onOpen} /> : undefined}
     />
   )
 }
