@@ -16,6 +16,7 @@ import { useRemoteArchivedSessions, useRemoteHostInfo, useRemoteSessions } from 
 import { installedVersionOf, restartAllLabel, restartAllTitle } from '../lib/session-labels'
 import { ConfirmEndDialog } from './confirm-end-dialog'
 import { MoveRemoteSessionDialog } from './move-remote-session-dialog'
+import { ServerHereDialog, useServerHere } from './rc-server-dialog'
 import { RemoteArchivedSessions } from './remote-archived-sessions'
 import { RemoteSessionRow } from './remote-session-row'
 import { RenameRemoteSessionDialog } from './rename-remote-session-dialog'
@@ -116,9 +117,8 @@ export function RemoteSessions({ host, account, email, home, onResult }: RemoteS
   const [pending, setPending] = useState<Pending | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
-  const list = sessions.data ?? []
-  const running = list.filter((session) => session.running)
-  const previous = list.filter((session) => !session.running)
+  const serverHere = useServerHere(host.id, account)
+  const { running, previous } = splitSessions(sessions.data)
 
   const row = (session: RemoteSession) => (
     <RemoteSessionRow
@@ -129,15 +129,7 @@ export function RemoteSessions({ host, account, email, home, onResult }: RemoteS
       home={home}
       busy={busyFor(actions, session.id)}
       disabled={actions.locked}
-      handlers={{
-        onResume: () => void actions.resume(session),
-        onRestart: () => void actions.restart(session),
-        onStop: () => setPending({ kind: 'stop', session }),
-        onMove: () => setDialog({ kind: 'move', session }),
-        onRename: () => setDialog({ kind: 'rename', session }),
-        onArchive: () => setPending({ kind: 'archive', session }),
-        onView: () => setDialog({ kind: 'view', session }),
-      }}
+      handlers={rowHandlers(session, { actions, setDialog, setPending, offerServer: serverHere.offer })}
     />
   )
 
@@ -185,6 +177,7 @@ export function RemoteSessions({ host, account, email, home, onResult }: RemoteS
         onClose={() => setDialog(null)}
         onMoved={actions.moved}
       />
+      <ServerHereDialog host={host} account={account} here={serverHere} />
       <ConfirmEndDialog
         pending={pending}
         hostLabel={host.label}
@@ -196,6 +189,39 @@ export function RemoteSessions({ host, account, email, home, onResult }: RemoteS
       />
     </section>
   )
+}
+
+/** The running sessions, and the previous ones. */
+function splitSessions(list: Array<RemoteSession> = []) {
+  return {
+    running: list.filter((session) => session.running),
+    previous: list.filter((session) => !session.running),
+  }
+}
+
+type RowWiring = {
+  /** The session actions, which run against the host. */
+  actions: ReturnType<typeof useRemoteSessionActions>
+  /** Opens a dialog for a session. */
+  setDialog: (dialog: SessionDialog) => void
+  /** Holds an action for the user to confirm. */
+  setPending: (pending: Pending) => void
+  /** "Remote Control server here…" for a session, when offered. */
+  offerServer: (session: RemoteSession) => (() => void) | undefined
+}
+
+/** What a session's row buttons do. */
+function rowHandlers(session: RemoteSession, { actions, setDialog, setPending, offerServer }: RowWiring) {
+  return {
+    onResume: () => void actions.resume(session),
+    onRestart: () => void actions.restart(session),
+    onStop: () => setPending({ kind: 'stop', session }),
+    onMove: () => setDialog({ kind: 'move', session }),
+    onRename: () => setDialog({ kind: 'rename', session }),
+    onArchive: () => setPending({ kind: 'archive', session }),
+    onView: () => setDialog({ kind: 'view', session }),
+    onServerHere: offerServer(session),
+  }
 }
 
 /** The lists, or where the listing stands: loading, failed, or empty. */

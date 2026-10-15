@@ -218,6 +218,7 @@ fn summary(
         claude_version: live.and_then(|entry| entry.version.clone()),
         update_pending: false,
         installed_version: None,
+        served: false,
         id,
     }
 }

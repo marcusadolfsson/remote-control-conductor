@@ -22,11 +22,11 @@ type Props = {
 }
 
 /** The last part of a path: `david` for `/home/marcus/david`. */
-function folderName(path: string): string {
+export function folderName(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? ''
 }
 
-const labelClasses = 'mb-1.5 block font-mono text-[11.5px] font-medium uppercase tracking-[0.08em] text-muted'
+export const labelClasses = 'mb-1.5 block font-mono text-[11.5px] font-medium uppercase tracking-[0.08em] text-muted'
 
 /**
  * Starting a Claude session on a remote host: pick a folder there, maybe
@@ -34,41 +34,29 @@ const labelClasses = 'mb-1.5 block font-mono text-[11.5px] font-medium uppercase
  * tmux with Remote Control on.
  */
 export function NewRemoteSessionDialog({ open, host, account, recentFolders, onClose, onStarted }: Props) {
-  // null: the host's home, which the first listing resolves.
-  const [path, setPath] = useState<string | null>(null)
-  const [name, setName] = useState('')
-  // Until someone types a name, the session is named after its folder.
-  const [nameTyped, setNameTyped] = useState(false)
-  const [trust, setTrust] = useState(true)
-  const dirs = useRemoteDirs(host.id, path, open)
+  const pick = useFolderPick(host.id, open, null)
   const start = useNewRemoteSession(host.id, account)
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset each time the dialog opens
   useEffect(() => {
     if (open) {
-      setPath(null)
-      setName('')
-      setNameTyped(false)
-      setTrust(true)
       start.reset()
     }
   }, [open])
 
-  const folder = dirs.data?.path ?? null
+  const folder = pick.folder
   const ready = folder !== null && !start.isPending
-
-  useEffect(() => {
-    if (!nameTyped && folder !== null) {
-      setName(folderName(folder))
-    }
-  }, [folder, nameTyped])
 
   async function handleStart() {
     if (!ready || folder === null) {
       return
     }
     try {
-      const launch = await start.mutateAsync({ cwd: folder, name: name.trim() || undefined, trustFolder: trust })
+      const launch = await start.mutateAsync({
+        cwd: folder,
+        name: pick.name.trim() || undefined,
+        trustFolder: pick.trust,
+      })
       onStarted(launch)
       onClose()
     } catch {
@@ -87,20 +75,9 @@ export function NewRemoteSessionDialog({ open, host, account, recentFolders, onC
       foot={<StartFoot ready={ready} starting={start.isPending} onCancel={onClose} onStart={handleStart} />}
     >
       <div className="space-y-4">
-        <FolderPicker
-          listing={dirs.data}
-          error={dirs.isError ? dirs.error : null}
-          recentFolders={recentFolders}
-          onPath={setPath}
-        />
-        <SessionNameField
-          name={name}
-          onNameChange={(typed) => {
-            setName(typed)
-            setNameTyped(true)
-          }}
-        />
-        <TrustFolderField trust={trust} onTrustChange={setTrust} />
+        <PickedFolder pick={pick} recentFolders={recentFolders} />
+        <SessionNameField name={pick.name} onNameChange={pick.typeName} />
+        <TrustFolderField trust={pick.trust} onTrustChange={pick.setTrust} />
         {start.isError ? (
           <p role="alert" className="whitespace-pre-line text-meta text-red">
             {sessionErrorMessage(start.error, 'The session could not be started.')}
@@ -133,7 +110,7 @@ type StartFootProps = {
 /**
  * The dialog's buttons.
  */
-function StartFoot({ ready, starting, onCancel, onStart }: StartFootProps) {
+export function StartFoot({ ready, starting, onCancel, onStart }: StartFootProps) {
   return (
     <>
       <Button variant="ghost" size="sm" trailingKbd={<Kbd>⎋</Kbd>} disabled={starting} onClick={onCancel}>
@@ -320,7 +297,13 @@ function SessionNameField({ name, onNameChange }: { name: string; onNameChange: 
 /**
  * Whether to answer Claude's folder trust question for the user.
  */
-function TrustFolderField({ trust, onTrustChange }: { trust: boolean; onTrustChange: (trust: boolean) => void }) {
+export function TrustFolderField({
+  trust,
+  onTrustChange,
+}: {
+  trust: boolean
+  onTrustChange: (trust: boolean) => void
+}) {
   return (
     <label className="flex cursor-pointer items-start gap-2 text-body text-ink-soft">
       <input
@@ -337,5 +320,72 @@ function TrustFolderField({ trust, onTrustChange }: { trust: boolean; onTrustCha
         </span>
       </span>
     </label>
+  )
+}
+
+/**
+ * A folder picked on a host in a dialog that starts something there, the
+ * name that follows it until someone types one, and whether to trust it.
+ * Starts over each time the dialog opens.
+ */
+export function useFolderPick(hostId: string, open: boolean, initial: string | null) {
+  // null: the host's home, which the first listing resolves.
+  const [path, setPath] = useState<string | null>(initial)
+  const [name, setName] = useState('')
+  // Until someone types a name, it's named after its folder.
+  const [nameTyped, setNameTyped] = useState(false)
+  const [trust, setTrust] = useState(true)
+  const dirs = useRemoteDirs(hostId, path, open)
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset each time the dialog opens
+  useEffect(() => {
+    if (open) {
+      setPath(initial)
+      setName('')
+      setNameTyped(false)
+      setTrust(true)
+    }
+  }, [open])
+
+  const folder = dirs.data?.path ?? null
+
+  useEffect(() => {
+    if (!nameTyped && folder !== null) {
+      setName(folderName(folder))
+    }
+  }, [folder, nameTyped])
+
+  return {
+    dirs,
+    folder,
+    setPath,
+    name,
+    typeName: (typed: string) => {
+      setName(typed)
+      setNameTyped(true)
+    },
+    trust,
+    setTrust,
+  }
+}
+
+type FolderPick = ReturnType<typeof useFolderPick>
+
+type PickedFolderProps = {
+  /** The pick the dialog holds. */
+  pick: FolderPick
+  /** Folders the profile's sessions worked in, most recent first. */
+  recentFolders: Array<string>
+}
+
+/** The folder picker, for a pick. */
+export function PickedFolder({ pick, recentFolders }: PickedFolderProps) {
+  return (
+    <FolderPicker
+      listing={pick.dirs.data}
+      error={pick.dirs.isError ? pick.dirs.error : null}
+      recentFolders={recentFolders}
+      onPath={pick.setPath}
+    />
   )
 }

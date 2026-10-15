@@ -27,6 +27,7 @@ import type {
   ProfilePatch,
   ProfilePaths,
   ProfileUsage,
+  RcServer,
   RemoteAccount,
   RemoteArchivedSession,
   RemoteHost,
@@ -41,6 +42,8 @@ import type {
   SessionAction,
   SessionList,
   Shell,
+  StartRcServer,
+  StartRcServerResult,
   Surface,
   Surfaces,
   WindowKey,
@@ -220,6 +223,25 @@ export function remoteNewSession(input: {
   request: NewRemoteSession
 }): Promise<RemoteLaunch> {
   return invoke<RemoteLaunch>('remote_new_session', input)
+}
+
+/** A profile's Remote Control servers on a host. */
+export function remoteListRcServers(input: { hostId: string; account: string }): Promise<Array<RcServer>> {
+  return invoke<Array<RcServer>>('remote_list_rc_servers', input)
+}
+
+/** Starts a Remote Control server in a folder, or finds the one running there. */
+export function remoteStartRcServer(input: {
+  hostId: string
+  account: string
+  request: StartRcServer
+}): Promise<StartRcServerResult> {
+  return invoke<StartRcServerResult>('remote_start_rc_server', input)
+}
+
+/** Stops a Remote Control server the host started. Resolves to whether it was running. */
+export function remoteStopRcServer(input: { hostId: string; account: string; pid: number }): Promise<boolean> {
+  return invoke<boolean>('remote_stop_rc_server', input)
 }
 
 /** Ends a running session on the host. Resolves to whether it was running. */

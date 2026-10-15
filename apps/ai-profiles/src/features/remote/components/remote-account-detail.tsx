@@ -13,7 +13,9 @@ import { DeleteRemoteAccountDialog } from './delete-remote-account-dialog'
 import { EditRemoteProfileDialog } from './edit-remote-profile-dialog'
 import { LaunchResultDialog } from './launch-result-dialog'
 import { NewRemoteSessionDialog } from './new-remote-session-dialog'
+import { RcServerDialog } from './rc-server-dialog'
 import { RemoteProfileHeader } from './remote-profile-header'
+import { RemoteRcServers } from './remote-rc-servers'
 import { RemoteSessions } from './remote-sessions'
 import { SignInDialog } from './sign-in-dialog'
 import { SignOutDialog } from './sign-out-dialog'
@@ -103,13 +105,16 @@ function Detail({ host, accountName, onRenamed }: DetailProps) {
           {host.label} has no profile called {accountName} any more.
         </p>
       ) : (
-        <RemoteSessions
-          host={host}
-          account={accountName}
-          email={account?.account?.email ?? null}
-          home={info.data?.home}
-          onResult={(launch, under) => setResult({ launch, account: under ?? accountName })}
-        />
+        <>
+          <RemoteRcServers host={host} account={accountName} home={info.data?.home} />
+          <RemoteSessions
+            host={host}
+            account={accountName}
+            email={account?.account?.email ?? null}
+            home={info.data?.home}
+            onResult={(launch, under) => setResult({ launch, account: under ?? accountName })}
+          />
+        </>
       )}
       <ProfileDialogs
         host={host}
@@ -177,6 +182,14 @@ function ProfileDialogs({ host, accountName, accounts, dialog, onClose, onRename
             onResult(launch)
           }
         }}
+      />
+      <RcServerDialog
+        open={dialog === 'server'}
+        host={host}
+        account={accountName}
+        initialFolder={null}
+        recentFolders={recentFolders}
+        onClose={onClose}
       />
       <SignInDialog open={dialog === 'signIn'} host={host} account={accountName} onClose={onClose} />
       {account ? (
