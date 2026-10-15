@@ -578,6 +578,52 @@ pub async fn remote_stop_rc_server(host_id: String, account: String, pid: i32) -
     .map(|result| result.was_running)
 }
 
+/// A Mac profile's Remote Control servers, the ones the app started.
+#[tauri::command(async)]
+pub fn local_list_rc_servers(profile_id: String) -> Vec<RcServer> {
+    crate::local_rc::list(&profile_id)
+}
+
+/// Start a Remote Control server in a folder on this Mac, as one of its
+/// profiles, so the Claude apps can start sessions there.
+#[tauri::command(async)]
+pub fn local_start_rc_server(
+    profile_id: String,
+    request: StartRcServerRequest,
+) -> AppResult<StartRcServerResult> {
+    crate::local_rc::start(&profile_id, &request)
+}
+
+/// Stop one of this Mac's Remote Control servers. `true` if it was running.
+#[tauri::command(async)]
+pub fn local_stop_rc_server(profile_id: String, pid: i32) -> AppResult<bool> {
+    crate::local_rc::stop(&profile_id, pid)
+}
+
+/// A folder's subfolders on this Mac, for the folder picker.
+#[tauri::command(async)]
+pub fn local_list_dirs(path: Option<String>) -> AppResult<DirListing> {
+    crate::local_rc::list_dirs(path.as_deref())
+}
+
+/// What a local server's tmux window shows now.
+#[tauri::command(async)]
+pub fn local_window_screen(window_id: String) -> AppResult<WindowScreen> {
+    crate::local_rc::window_screen(&window_id)
+}
+
+/// Type into a local server's tmux window.
+#[tauri::command(async)]
+pub fn local_window_keys(window_id: String, keys: Vec<WindowKey>) -> AppResult<WindowScreen> {
+    crate::local_rc::window_keys(&window_id, &keys)
+}
+
+/// Open a Terminal window attached to a local server's tmux window.
+#[tauri::command(async)]
+pub fn local_open_in_terminal(window_id: String) -> AppResult<()> {
+    crate::local_rc::open_in_terminal(&window_id)
+}
+
 /// End a running remote session. `true` if it was running.
 #[tauri::command]
 pub async fn remote_stop_session(

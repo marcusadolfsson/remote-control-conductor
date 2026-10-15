@@ -11,6 +11,7 @@ mod error;
 mod inherited_env;
 mod launch;
 mod launchers;
+mod local_rc;
 pub mod mcp;
 mod migration;
 mod path_setup;
@@ -145,6 +146,13 @@ pub fn run() {
             commands::remote_resume_session,
             commands::remote_stop_session,
             commands::remote_list_rc_servers,
+            commands::local_list_rc_servers,
+            commands::local_start_rc_server,
+            commands::local_stop_rc_server,
+            commands::local_list_dirs,
+            commands::local_window_screen,
+            commands::local_window_keys,
+            commands::local_open_in_terminal,
             commands::remote_start_rc_server,
             commands::remote_stop_rc_server,
             commands::remote_restart_session,

@@ -4,6 +4,7 @@ import type { GuiLaunch } from './use-gui-launch'
 import { Suspense, useState } from 'react'
 
 import { PaneLayout } from '@/components/pane-layout'
+import { LocalRcServers } from '@/features/remote/components/local-rc-servers'
 import { ProfileRemoteControl } from '@/features/remote/components/profile-remote-control'
 import { SessionsPanel } from '@/features/sessions/components/sessions-panel'
 import { appSpecs } from '@/lib/app-registry'
@@ -99,6 +100,8 @@ export function DefaultProfileDetail({ entry, onMigrate }: Props) {
           <ResolvedDefaultSurfaces entry={entry} launch={launch} onError={setActionError} />
         </Suspense>
       </div>
+
+      {entry.app === 'claude' ? <LocalRcServers key={`rc-servers-${entry.id}`} profileId={entry.id} /> : null}
 
       {entry.app === 'claude' ? <ProfileRemoteControl key={`rc-${entry.id}`} profileId={entry.id} /> : null}
 

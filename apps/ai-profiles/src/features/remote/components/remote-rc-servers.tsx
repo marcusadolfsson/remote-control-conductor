@@ -21,6 +21,8 @@ type RemoteRcServersProps = {
   account: string
   /** The host's home folder, which folders are shortened against. */
   home?: string
+  /** Starting one, from a button by the heading; with it, the section shows even when there are none. */
+  onStart?: () => void
 }
 
 /**
@@ -28,36 +30,34 @@ type RemoteRcServersProps = {
  * so the Claude apps on another device can start sessions there. Nothing
  * when there are none, or the host's server is too old to say.
  */
-export function RemoteRcServers({ host, account, home }: RemoteRcServersProps) {
+export function RemoteRcServers({ host, account, home, onStart }: RemoteRcServersProps) {
   const servers = useRemoteRcServers(host.id, account)
   const stop = useStopRcServer(host.id, account)
   const [stopping, setStopping] = useState<RcServer | null>(null)
   const [viewing, setViewing] = useState<RcServer | null>(null)
   const list = servers.data ?? []
-  if (list.length === 0) {
+  if (list.length === 0 && !onStart) {
     return null
   }
   return (
     <section aria-label="Remote Control servers" className="mb-6">
-      <div className="mb-2 flex min-h-7 items-center px-0.5">
-        <h2 className="text-meta font-medium text-ink-soft">
-          Remote Control servers<span className="ml-1.5 font-normal text-muted">{list.length}</span>
-        </h2>
-      </div>
-      <div className={sessionPanelClasses}>
-        <ul aria-label="Remote Control servers">
-          {list.map((server) => (
-            <RcServerRow
-              key={server.pid}
-              server={server}
-              home={home}
-              stopping={stop.isPending && stop.variables === server.pid}
-              onView={() => setViewing(server)}
-              onStop={() => setStopping(server)}
-            />
-          ))}
-        </ul>
-      </div>
+      <RcServersHeading count={list.length} onStart={onStart} />
+      {list.length === 0 ? null : (
+        <div className={sessionPanelClasses}>
+          <ul aria-label="Remote Control servers">
+            {list.map((server) => (
+              <RcServerRow
+                key={server.pid}
+                server={server}
+                home={home}
+                stopping={stop.isPending && stop.variables === server.pid}
+                onView={() => setViewing(server)}
+                onStop={() => setStopping(server)}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
       {stop.isError ? (
         <p role="alert" className="mt-1.5 px-0.5 text-meta text-red">
           {sessionErrorMessage(stop.error, 'The Remote Control server could not be stopped.')}
@@ -86,6 +86,30 @@ export function RemoteRcServers({ host, account, home }: RemoteRcServersProps) {
         }}
       />
     </section>
+  )
+}
+
+type RcServersHeadingProps = {
+  /** How many there are. */
+  count: number
+  /** Starts one, when it can be started from here. */
+  onStart?: () => void
+}
+
+/** "Remote Control servers", how many, and Start… where they can be started here. */
+function RcServersHeading({ count, onStart }: RcServersHeadingProps) {
+  return (
+    <div className="mb-2 flex min-h-7 items-center justify-between px-0.5">
+      <h2 className="text-meta font-medium text-ink-soft">
+        Remote Control servers
+        {count > 0 ? <span className="ml-1.5 font-normal text-muted">{count}</span> : null}
+      </h2>
+      {onStart ? (
+        <Button variant="ghost" size="sm" leadingIcon={<Radio className="h-3.5 w-3.5" />} onClick={onStart}>
+          Start…
+        </Button>
+      ) : null}
+    </div>
   )
 }
 

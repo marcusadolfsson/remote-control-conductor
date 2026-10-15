@@ -104,4 +104,13 @@ describe('RemoteRcServers', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('offers Start… even with none, where servers can be started from here', async () => {
+    vi.mocked(remoteListRcServers).mockResolvedValue([])
+    const onStart = vi.fn()
+    renderWithQuery(<RemoteRcServers host={host} account="default:claude" onStart={onStart} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Start…' }))
+    expect(onStart).toHaveBeenCalled()
+    expect(screen.queryByRole('list', { name: 'Remote Control servers' })).not.toBeInTheDocument()
+  })
 })
