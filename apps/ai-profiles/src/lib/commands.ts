@@ -53,6 +53,8 @@ import type {
 import { invoke } from '@tauri-apps/api/core'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 
+import { isLocalHost } from './local-host'
+
 export function listProfiles(): Promise<Array<Profile>> {
   return invoke<Array<Profile>>('list_profiles')
 }
@@ -214,6 +216,9 @@ export function remoteListSessions(input: { hostId: string; account: string }): 
 }
 
 export function remoteListDirs(input: { hostId: string; path?: string }): Promise<DirListing> {
+  if (isLocalHost(input.hostId)) {
+    return invoke<DirListing>('local_list_dirs', { path: input.path ?? null })
+  }
   return invoke<DirListing>('remote_list_dirs', { hostId: input.hostId, path: input.path ?? null })
 }
 
@@ -227,6 +232,9 @@ export function remoteNewSession(input: {
 
 /** A profile's Remote Control servers on a host. */
 export function remoteListRcServers(input: { hostId: string; account: string }): Promise<Array<RcServer>> {
+  if (isLocalHost(input.hostId)) {
+    return invoke<Array<RcServer>>('local_list_rc_servers', { profileId: input.account })
+  }
   return invoke<Array<RcServer>>('remote_list_rc_servers', input)
 }
 
@@ -236,11 +244,17 @@ export function remoteStartRcServer(input: {
   account: string
   request: StartRcServer
 }): Promise<StartRcServerResult> {
+  if (isLocalHost(input.hostId)) {
+    return invoke<StartRcServerResult>('local_start_rc_server', { profileId: input.account, request: input.request })
+  }
   return invoke<StartRcServerResult>('remote_start_rc_server', input)
 }
 
 /** Stops a Remote Control server the host started. Resolves to whether it was running. */
 export function remoteStopRcServer(input: { hostId: string; account: string; pid: number }): Promise<boolean> {
+  if (isLocalHost(input.hostId)) {
+    return invoke<boolean>('local_stop_rc_server', { profileId: input.account, pid: input.pid })
+  }
   return invoke<boolean>('remote_stop_rc_server', input)
 }
 
@@ -421,6 +435,9 @@ export function remoteWindowScreen(input: {
   account: string
   windowId: string
 }): Promise<WindowScreen> {
+  if (isLocalHost(input.hostId)) {
+    return invoke<WindowScreen>('local_window_screen', { windowId: input.windowId })
+  }
   return invoke<WindowScreen>('remote_window_screen', input)
 }
 
@@ -431,6 +448,9 @@ export function remoteWindowKeys(input: {
   windowId: string
   keys: Array<WindowKey>
 }): Promise<WindowScreen> {
+  if (isLocalHost(input.hostId)) {
+    return invoke<WindowScreen>('local_window_keys', { windowId: input.windowId, keys: input.keys })
+  }
   return invoke<WindowScreen>('remote_window_keys', input)
 }
 
@@ -443,6 +463,12 @@ export function remoteWindowKeys(input: {
  * Resolves to a hint when Terminal is going to ask something (a password, a
  * new host key); rejects, saying what to set up, when ssh can't get in.
  */
+/** Opens a Terminal window attached to one of this Mac's server windows. */
+export async function localOpenInTerminal(windowId: string): Promise<null> {
+  await invoke<void>('local_open_in_terminal', { windowId })
+  return null
+}
+
 export function remoteOpenInTerminal(input: { hostId: string; attachCommand: string }): Promise<string | null> {
   return invoke<string | null>('remote_open_in_terminal', input)
 }

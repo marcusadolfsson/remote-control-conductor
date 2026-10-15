@@ -6,6 +6,7 @@ import { Suspense, useState } from 'react'
 
 import { PaneLayout } from '@/components/pane-layout'
 import { useDependencies } from '@/features/dependencies/api/use-dependencies'
+import { LocalRcServers } from '@/features/remote/components/local-rc-servers'
 import { ProfileRemoteControl } from '@/features/remote/components/profile-remote-control'
 import { SessionsPanel } from '@/features/sessions/components/sessions-panel'
 import { appSpecs, wrapperCommand } from '@/lib/app-registry'
@@ -107,6 +108,8 @@ export function ProfileDetail({ profile, shortcutsEnabled, onEdit, onDelete }: P
           />
         </Suspense>
       </div>
+
+      {profile.app === 'claude' ? <LocalRcServers key={`rc-servers-${profile.id}`} profileId={profile.id} /> : null}
 
       {profile.app === 'claude' ? <ProfileRemoteControl key={`rc-${profile.id}`} profileId={profile.id} /> : null}
 

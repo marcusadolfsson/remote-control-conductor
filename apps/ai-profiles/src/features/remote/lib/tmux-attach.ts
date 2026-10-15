@@ -1,5 +1,7 @@
 import type { RemoteHost, TmuxWindow } from '@/lib/types'
 
+import { isLocalHost } from '@/lib/local-host'
+
 /** A host name ssh takes as one plain word. */
 const PLAIN_HOSTNAME = /^(?![-.])[A-Za-z0-9.-]{1,253}$/
 /** Exactly what the server sends, from plain names and a window id only. */
@@ -31,5 +33,8 @@ export function tmuxAttach(session: { window: TmuxWindow | null }): string | nul
  */
 export function attachCommand(host: RemoteHost, session: { window: TmuxWindow | null }): string | null {
   const tmux = tmuxAttach(session)
+  if (tmux && isLocalHost(host.id)) {
+    return tmux
+  }
   return tmux ? sshAttach(host, tmux) : null
 }

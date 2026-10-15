@@ -6,7 +6,8 @@ import { Copy, SquareTerminal } from 'lucide-react'
 
 import { Button, Dialog, useToast } from '@/design'
 import { sessionErrorMessage } from '@/features/profiles/components/session-error-message'
-import { copyToClipboard, remoteOpenInTerminal } from '@/lib/commands'
+import { copyToClipboard, localOpenInTerminal, remoteOpenInTerminal } from '@/lib/commands'
+import { isLocalHost } from '@/lib/local-host'
 
 import { sessionTitle } from '../lib/session-labels'
 import { attachCommand, tmuxAttach } from '../lib/tmux-attach'
@@ -50,7 +51,10 @@ async function openInTerminal(host: RemoteHost, session: WindowOf, toast: Return
   }
   await copyToClipboard(attach)
   try {
-    const hint = await remoteOpenInTerminal({ hostId: host.id, attachCommand: tmux })
+    const hint =
+      isLocalHost(host.id) && session.window
+        ? await localOpenInTerminal(session.window.windowId)
+        : await remoteOpenInTerminal({ hostId: host.id, attachCommand: tmux })
     if (hint) {
       toast.info('Opening Terminal', hint)
     }
