@@ -1,4 +1,4 @@
-import type { RemoteHost, RemoteSession, TmuxWindow } from '@/lib/types'
+import type { RemoteHost, TmuxWindow } from '@/lib/types'
 
 /** A host name ssh takes as one plain word. */
 const PLAIN_HOSTNAME = /^(?![-.])[A-Za-z0-9.-]{1,253}$/
@@ -29,7 +29,7 @@ export function tmuxAttach(session: { window: TmuxWindow | null }): string | nul
  * What to paste in a terminal to be in a session's tmux window: attach to
  * its tmux session over ssh, then switch to its window.
  */
-export function attachCommand(host: RemoteHost, session: RemoteSession): string | null {
+export function attachCommand(host: RemoteHost, session: { window: TmuxWindow | null }): string | null {
   const tmux = tmuxAttach(session)
   return tmux ? sshAttach(host, tmux) : null
 }

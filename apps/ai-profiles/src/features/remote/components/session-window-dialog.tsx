@@ -12,13 +12,16 @@ import { sessionTitle } from '../lib/session-labels'
 import { attachCommand, tmuxAttach } from '../lib/tmux-attach'
 import { RemoteWindow } from './remote-window'
 
+/** What the dialog shows: a running session's tmux window, or a Remote Control server's. */
+type WindowOf = Pick<RemoteSession, 'id' | 'title' | 'lastPrompt' | 'window'>
+
 type SessionWindowDialogProps = {
   /** The host the session runs on. */
   host: RemoteHost
   /** The profile it runs under. */
   account: string
-  /** A running session, in a tmux window. */
-  session: RemoteSession
+  /** A running session (or Remote Control server), in a tmux window. */
+  session: WindowOf
   /** The server opened the window, so it can be shown here. */
   ours: boolean
   /** Closes the dialog. */
@@ -39,7 +42,7 @@ type NotOursNoteProps = {
  * Open session's tmux window in Terminal, attached over ssh. The command is
  * copied as well, for a terminal other than Terminal, or another Mac.
  */
-async function openInTerminal(host: RemoteHost, session: RemoteSession, toast: ReturnType<typeof useToast>) {
+async function openInTerminal(host: RemoteHost, session: WindowOf, toast: ReturnType<typeof useToast>) {
   const attach = attachCommand(host, session)
   const tmux = tmuxAttach(session)
   if (!attach || !tmux) {
