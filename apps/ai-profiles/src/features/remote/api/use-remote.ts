@@ -142,21 +142,42 @@ export function useStopRcServer(hostId: string, account: string) {
  * then start it again in its folder, with its name and spawn mode. The
  * sessions it serves come back with it.
  */
+async function restartRcServer(hostId: string, account: string, server: RcServer) {
+  await remoteStopRcServer({ hostId, account, pid: server.pid })
+  return remoteStartRcServer({
+    hostId,
+    account,
+    request: {
+      folder: server.folder,
+      name: server.name ?? undefined,
+      spawn: server.spawn === 'worktree' ? 'worktree' : 'same-dir',
+      trustFolder: false,
+    },
+  })
+}
+
+/** Restart one Remote Control server (see `restartRcServer`), then read them again. */
 export function useRestartRcServer(hostId: string, account: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (server: RcServer) => {
-      await remoteStopRcServer({ hostId, account, pid: server.pid })
-      return remoteStartRcServer({
-        hostId,
-        account,
-        request: {
-          folder: server.folder,
-          name: server.name ?? undefined,
-          spawn: server.spawn === 'worktree' ? 'worktree' : 'same-dir',
-          trustFolder: false,
-        },
-      })
+    mutationFn: (server: RcServer) => restartRcServer(hostId, account, server),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['remote', hostId, 'accounts', account] }),
+  })
+}
+
+/**
+ * Restart each of `servers` in turn, going on past one that fails; resolves
+ * to the folders of those that did.
+ */
+export function useRestartAllRcServers(hostId: string, account: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (servers: Array<RcServer>) => {
+      const failed: Array<string> = []
+      for (const server of servers) {
+        await restartRcServer(hostId, account, server).catch(() => failed.push(server.folder))
+      }
+      return failed
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['remote', hostId, 'accounts', account] }),
   })

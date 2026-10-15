@@ -111,6 +111,21 @@ describe('RemoteRcServers', () => {
     expect(remoteStopRcServer).toHaveBeenCalledWith({ hostId: 'h1', account: 'Misc', pid: 4121 })
   })
 
+  it('restarts every server, after asking, saying how many wait on an update', async () => {
+    vi.mocked(remoteListRcServers).mockResolvedValue([
+      server({ pid: 1, folder: '/home/marcus/a', updatePending: true }),
+      server({ pid: 2, folder: '/home/marcus/b' }),
+      server({ pid: 3, folder: '/home/marcus/c', window: null }),
+    ])
+    renderWithQuery(<RemoteRcServers host={host} account="Misc" />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Restart all · 1 to update' }))
+    expect(await screen.findByText('Restart all 2 Remote Control servers?')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^Restart all$/ }))
+    await vi.waitFor(() => expect(remoteStartRcServer).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(remoteStopRcServer).mock.calls.map(([call]) => call.pid)).toEqual([1, 2])
+  })
+
   it('lists the sessions a server serves under it', async () => {
     vi.mocked(remoteListRcServers).mockResolvedValue([server(), server({ pid: 7, folder: '/home/marcus/idle' })])
     renderWithQuery(
