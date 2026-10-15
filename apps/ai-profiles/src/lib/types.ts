@@ -416,6 +416,8 @@ export type RemoteSession = {
   updatePending?: boolean
   /** The newer Claude Code installed on the host, when `updatePending`. */
   installedVersion?: string | null
+  /** Started and served by a Remote Control server: it comes back with the server, not on its own. */
+  served?: boolean
 }
 
 /** The subfolders of a folder on a remote host, for picking where to work. */
@@ -444,6 +446,42 @@ export type RemoteLaunch = {
   attention: Attention | null
   /** To run on the host: `tmux attach -t … \; select-window -t …`. */
   attachCommand: string
+}
+
+/**
+ * A Remote Control server on a host: `claude remote-control` in a folder, so
+ * the Claude apps can start new sessions there.
+ */
+export type RcServer = {
+  pid: number
+  /** The folder its sessions start in. */
+  folder: string
+  /** What the Claude apps call it. */
+  name: string | null
+  /** `same-dir` (sessions in the folder) or `worktree` (each in a git worktree of its own). */
+  spawn: string
+  /** The sessions it serves now. */
+  sessions: number
+  /** Its tmux window, when the host's server started it: only those can be stopped from here. */
+  window: TmuxWindow | null
+  /** Its page on claude.ai, once connected. */
+  environmentUrl: string | null
+  /** It's waiting for someone in its window before it connects. */
+  attention: Attention | null
+}
+
+export type StartRcServer = {
+  folder: string
+  name?: string
+  spawn: 'same-dir' | 'worktree'
+  trustFolder: boolean
+}
+
+export type StartRcServerResult = {
+  server: RcServer
+  /** One was running in the folder already: nothing was started. */
+  alreadyRunning: boolean
+  attachCommand: string | null
 }
 
 export type NewRemoteSession = {

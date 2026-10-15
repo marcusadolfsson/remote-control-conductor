@@ -21,7 +21,7 @@ import {
 import { sublineParts } from '../lib/profile-subline'
 
 /** A dialog the profile's header opens. */
-export type ProfileDialog = 'start' | 'signIn' | 'signOut' | 'switch' | 'edit' | 'delete'
+export type ProfileDialog = 'start' | 'server' | 'signIn' | 'signOut' | 'switch' | 'edit' | 'delete'
 
 type RemoteProfileHeaderProps = {
   /** The host the profile is on. */
@@ -126,6 +126,10 @@ function ProfileMenu({ account, onOpen }: ProfileMenuProps) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem className="px-2 py-1.5 text-[12px]" onSelect={() => onOpen('server')}>
+          Remote Control server…
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem className="px-2 py-1.5 text-[12px]" onSelect={() => onOpen('edit')}>
           Edit profile…
         </DropdownMenuItem>

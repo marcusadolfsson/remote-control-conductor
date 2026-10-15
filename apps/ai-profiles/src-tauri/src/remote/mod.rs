@@ -15,9 +15,10 @@ use ai_profiles_core::api::{
     ArchiveResult, ArchivedSession, CreateAccountRequest, DeleteArchiveResult, DeletedAccount,
     DirListing, HostInfo, HostSettings, LaunchResult, LoginCodeRequest, LoginStart, LogoutRequest,
     LogoutResult, MemoryMergeRequest, MemoryMergeResult, MoveProgress, NewSessionRequest,
-    PairRequest, PairResponse, RemoteAccount, RemoteSession, RenameAccountRequest,
-    RenameSessionRequest, RenameSessionResult, RestoreResult, ResumeRequest, StopResult,
-    TransferPlan, TransferReport, TransferRequest, WindowKey, WindowKeysRequest, WindowScreen,
+    PairRequest, PairResponse, RcServer, RemoteAccount, RemoteSession, RenameAccountRequest,
+    RenameSessionRequest, RenameSessionResult, RestoreResult, ResumeRequest, StartRcServerRequest,
+    StartRcServerResult, StopResult, TransferPlan, TransferReport, TransferRequest, WindowKey,
+    WindowKeysRequest, WindowScreen,
 };
 use ai_profiles_core::pairing::{self, display_fingerprint};
 use serde::Serialize;
@@ -335,6 +336,45 @@ pub async fn stop(
     session_id: &str,
 ) -> AppResult<StopResult> {
     let path = session_path(account, session_id, "stop")?;
+    post(list, secrets, host_id, &path, &serde_json::json!({})).await
+}
+
+/// The account's Remote Control servers (`claude remote-control` in a
+/// folder), wherever they were started.
+pub async fn rc_servers(
+    list: &HostList,
+    secrets: &dyn SecretStore,
+    host_id: &str,
+    account: &str,
+) -> AppResult<Vec<RcServer>> {
+    let path = format!("/v1/accounts/{}/rc-servers", account_segment(account)?);
+    get(list, secrets, host_id, &path, &[]).await
+}
+
+/// Start a Remote Control server in a folder, or find the one running there.
+pub async fn start_rc_server(
+    list: &HostList,
+    secrets: &dyn SecretStore,
+    host_id: &str,
+    account: &str,
+    request: &StartRcServerRequest,
+) -> AppResult<StartRcServerResult> {
+    let path = format!("/v1/accounts/{}/rc-servers", account_segment(account)?);
+    post(list, secrets, host_id, &path, request).await
+}
+
+/// Stop a Remote Control server the host started.
+pub async fn stop_rc_server(
+    list: &HostList,
+    secrets: &dyn SecretStore,
+    host_id: &str,
+    account: &str,
+    pid: i32,
+) -> AppResult<StopResult> {
+    let path = format!(
+        "/v1/accounts/{}/rc-servers/{pid}/stop",
+        account_segment(account)?
+    );
     post(list, secrets, host_id, &path, &serde_json::json!({})).await
 }
 

@@ -29,7 +29,8 @@ use crate::usage::{
 };
 use ai_profiles_core::api::{
     DeletedAccount, DirListing, HostInfo, HostSettings, LaunchResult as RemoteLaunch, LoginStart,
-    NewSessionRequest, RemoteAccount, RemoteSession, WindowKey, WindowScreen,
+    NewSessionRequest, RcServer, RemoteAccount, RemoteSession, StartRcServerRequest,
+    StartRcServerResult, WindowKey, WindowScreen,
 };
 
 #[tauri::command]
@@ -531,6 +532,50 @@ pub async fn remote_restore_session(
     )
     .await
     .map(|result| result.transcript)
+}
+
+/// A remote profile's Remote Control servers.
+#[tauri::command]
+pub async fn remote_list_rc_servers(host_id: String, account: String) -> AppResult<Vec<RcServer>> {
+    remote::rc_servers(
+        &HostList::default_list()?,
+        secrets::store(),
+        &host_id,
+        &account,
+    )
+    .await
+}
+
+/// Start a Remote Control server in a folder on a host, so the Claude apps
+/// can start sessions there.
+#[tauri::command]
+pub async fn remote_start_rc_server(
+    host_id: String,
+    account: String,
+    request: StartRcServerRequest,
+) -> AppResult<StartRcServerResult> {
+    remote::start_rc_server(
+        &HostList::default_list()?,
+        secrets::store(),
+        &host_id,
+        &account,
+        &request,
+    )
+    .await
+}
+
+/// Stop a Remote Control server the host started. `true` if it was running.
+#[tauri::command]
+pub async fn remote_stop_rc_server(host_id: String, account: String, pid: i32) -> AppResult<bool> {
+    remote::stop_rc_server(
+        &HostList::default_list()?,
+        secrets::store(),
+        &host_id,
+        &account,
+        pid,
+    )
+    .await
+    .map(|result| result.was_running)
 }
 
 /// End a running remote session. `true` if it was running.

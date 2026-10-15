@@ -1,4 +1,4 @@
-import type { RemoteHost, RemoteSession } from '@/lib/types'
+import type { RemoteHost, RemoteSession, TmuxWindow } from '@/lib/types'
 
 /** A host name ssh takes as one plain word. */
 const PLAIN_HOSTNAME = /^(?![-.])[A-Za-z0-9.-]{1,253}$/
@@ -18,8 +18,8 @@ export function sshAttach(host: RemoteHost, attachCommand: string): string | nul
   return `ssh -t ${host.hostname} '${attachCommand}'`
 }
 
-/** The part that runs on the host: attach to the tmux session, then pick the window. */
-export function tmuxAttach(session: RemoteSession): string | null {
+/** The part that runs on the host: attach to the tmux session, then pick the window (a session's, a server's). */
+export function tmuxAttach(session: { window: TmuxWindow | null }): string | null {
   return session.window
     ? `tmux attach -t ${session.window.session} \\; select-window -t ${session.window.windowId}`
     : null

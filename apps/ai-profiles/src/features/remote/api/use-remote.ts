@@ -1,4 +1,11 @@
-import type { NewRemoteSession, RemoteAccount, RemoteHost, RemoteSession, RemoteTransferRequest } from '@/lib/types'
+import type {
+  NewRemoteSession,
+  RemoteAccount,
+  RemoteHost,
+  RemoteSession,
+  RemoteTransferRequest,
+  StartRcServer,
+} from '@/lib/types'
 
 import { useEffect, useRef } from 'react'
 
@@ -14,6 +21,7 @@ import {
   remoteListAccounts,
   remoteListDirs,
   remoteListHosts,
+  remoteListRcServers,
   remoteListSessions,
   remoteLoginCancel,
   remoteLoginStart,
@@ -31,6 +39,8 @@ import {
   remoteResumeSession,
   remoteSetHostSettings,
   remoteSetProfileColor,
+  remoteStartRcServer,
+  remoteStopRcServer,
   remoteStopSession,
   remoteTransferPlan,
   remoteTransferProgress,
@@ -89,6 +99,38 @@ export function useRemoteSessions(hostId: string, account: string) {
     // Sooner while Remote Control is connecting, so Open in Claude shows
     // once it can.
     refetchInterval: (query) => (query.state.data?.some((session) => session.remoteControlConnecting) ? 3_000 : 15_000),
+  })
+}
+
+/**
+ * A profile's Remote Control servers. A host too old to have them fails, which
+ * is how the app knows to leave them out.
+ */
+export function useRemoteRcServers(hostId: string, account: string) {
+  return useQuery({
+    queryKey: queryKeys.remote.rcServers(hostId, account),
+    queryFn: () => remoteListRcServers({ hostId, account }),
+    retry: 0,
+    refetchOnWindowFocus: 'always',
+    refetchInterval: 15_000,
+  })
+}
+
+/** Start a Remote Control server, then read the servers and sessions again. */
+export function useStartRcServer(hostId: string, account: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (request: StartRcServer) => remoteStartRcServer({ hostId, account, request }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['remote', hostId, 'accounts', account] }),
+  })
+}
+
+/** Stop a Remote Control server, then read the servers and sessions again. */
+export function useStopRcServer(hostId: string, account: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (pid: number) => remoteStopRcServer({ hostId, account, pid }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['remote', hostId, 'accounts', account] }),
   })
 }
 

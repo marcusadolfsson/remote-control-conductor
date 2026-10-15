@@ -43,6 +43,8 @@ type RemoteSessionRowHandlers = {
   onArchive: () => void
   /** Open its window in Remote Control Conductor. */
   onView: () => void
+  /** Opens the Remote Control server dialog on its folder; absent when one runs there or it has none. */
+  onServerHere?: () => void
 }
 
 type RemoteSessionRowProps = {
@@ -103,6 +105,8 @@ type SessionMenuProps = {
   onRename: () => void
   /** Opens the move dialog. */
   onMove: () => void
+  /** Opens the Remote Control server dialog on its folder, when offered. */
+  onServerHere?: () => void
 }
 
 /**
@@ -229,19 +233,27 @@ function RunningActions({ host, session, email, busy, disabled, handlers }: Sess
           <SquareTerminal aria-hidden className="h-3.5 w-3.5" />
         </Button>
       ) : null}
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-label="Restart"
-        title={restartTitle(session, tmux !== null)}
-        disabled={disabled}
-        className={cn(rowActionClasses, session.updatePending && 'text-amber hover:text-amber')}
-        onClick={handlers.onRestart}
-      >
-        <RotateCw aria-hidden className={cn('h-3.5 w-3.5', busy === 'restart' && 'animate-spin')} />
-      </Button>
+      {/* A served session comes back with its Remote Control server, not on its own. */}
+      {session.served ? null : (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Restart"
+          title={restartTitle(session, tmux !== null)}
+          disabled={disabled}
+          className={cn(rowActionClasses, session.updatePending && 'text-amber hover:text-amber')}
+          onClick={handlers.onRestart}
+        >
+          <RotateCw aria-hidden className={cn('h-3.5 w-3.5', busy === 'restart' && 'animate-spin')} />
+        </Button>
+      )}
       <StopButton stopping={busy === 'stop'} disabled={disabled} onStop={handlers.onStop} />
-      <SessionMenu disabled={disabled} onRename={handlers.onRename} onMove={handlers.onMove} />
+      <SessionMenu
+        disabled={disabled}
+        onRename={handlers.onRename}
+        onMove={handlers.onMove}
+        onServerHere={handlers.onServerHere}
+      />
     </>
   )
 }
@@ -278,7 +290,12 @@ function PreviousActions({ busy, disabled, handlers }: HeldActionsProps) {
           <Play aria-hidden className="h-3.5 w-3.5" />
         )}
       </Button>
-      <SessionMenu disabled={disabled} onRename={handlers.onRename} onMove={handlers.onMove} />
+      <SessionMenu
+        disabled={disabled}
+        onRename={handlers.onRename}
+        onMove={handlers.onMove}
+        onServerHere={handlers.onServerHere}
+      />
     </>
   )
 }
@@ -332,7 +349,7 @@ function StopButton({ stopping, disabled, onStop }: StopButtonProps) {
  * host, switching the profile's account is the usual way to go on under
  * another account, so moving isn't a button of its own.
  */
-function SessionMenu({ disabled, onRename, onMove }: SessionMenuProps) {
+function SessionMenu({ disabled, onRename, onMove, onServerHere }: SessionMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -354,6 +371,11 @@ function SessionMenu({ disabled, onRename, onMove }: SessionMenuProps) {
         <DropdownMenuItem className="px-2 py-1.5 text-[12px]" onSelect={onMove}>
           Move to another profile…
         </DropdownMenuItem>
+        {onServerHere ? (
+          <DropdownMenuItem className="px-2 py-1.5 text-[12px]" onSelect={onServerHere}>
+            Remote Control server here…
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   )

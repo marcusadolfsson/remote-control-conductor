@@ -30,6 +30,7 @@ export const queryKeys = {
     accounts: (hostId: string) => ['remote', hostId, 'accounts'] as const,
     sessions: (hostId: string, account: string) => ['remote', hostId, 'accounts', account, 'sessions'] as const,
     archived: (hostId: string, account: string) => ['remote', hostId, 'accounts', account, 'archived'] as const,
+    rcServers: (hostId: string, account: string) => ['remote', hostId, 'accounts', account, 'rc-servers'] as const,
     transferPlan: (hostId: string, account: string, sessionId: string, to: string) =>
       ['remote', hostId, 'accounts', account, 'transfer', sessionId, to] as const,
     dirs: (hostId: string, path: string | null) => ['remote', hostId, 'dirs', path] as const,
