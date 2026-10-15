@@ -3,7 +3,7 @@ import type { RcServer, RemoteHost } from '@/lib/types'
 
 import { useState } from 'react'
 
-import { ExternalLink, Radio, Square, SquareTerminal } from 'lucide-react'
+import { ExternalLink, Radio, RotateCw, Square, SquareTerminal } from 'lucide-react'
 
 import { Button, cn, Dialog, Kbd } from '@/design'
 import { sessionErrorMessage } from '@/features/profiles/components/session-error-message'
@@ -11,7 +11,8 @@ import { sessionPanelClasses, sessionRowClasses } from '@/features/profiles/comp
 import { shortenHomePath } from '@/features/profiles/components/shorten-home-path'
 import { openExternalUrl } from '@/lib/commands'
 
-import { useRemoteRcServers, useStopRcServer } from '../api/use-remote'
+import { useRemoteRcServers, useRestartRcServer, useStopRcServer } from '../api/use-remote'
+import { updateVersions } from '../lib/session-labels'
 import { folderName } from './new-remote-session-dialog'
 import { SessionWindowDialog } from './session-window-dialog'
 
@@ -36,7 +37,9 @@ type RemoteRcServersProps = {
 export function RemoteRcServers({ host, account, home, onStart, sessionsOf }: RemoteRcServersProps) {
   const servers = useRemoteRcServers(host.id, account)
   const stop = useStopRcServer(host.id, account)
+  const restart = useRestartRcServer(host.id, account)
   const [stopping, setStopping] = useState<RcServer | null>(null)
+  const [updating, setUpdating] = useState<RcServer | null>(null)
   const [viewing, setViewing] = useState<RcServer | null>(null)
   const list = servers.data ?? []
   if (list.length === 0 && !onStart) {
@@ -53,9 +56,13 @@ export function RemoteRcServers({ host, account, home, onStart, sessionsOf }: Re
                 key={server.pid}
                 server={server}
                 home={home}
-                stopping={stop.isPending && stop.variables === server.pid}
+                stopping={
+                  (stop.isPending && stop.variables === server.pid) ||
+                  (restart.isPending && restart.variables?.pid === server.pid)
+                }
                 onView={() => setViewing(server)}
                 onStop={() => setStopping(server)}
+                onUpdate={() => setUpdating(server)}
               >
                 {sessionsOf?.(server)}
               </RcServerRow>
@@ -66,6 +73,11 @@ export function RemoteRcServers({ host, account, home, onStart, sessionsOf }: Re
       {stop.isError ? (
         <p role="alert" className="mt-1.5 px-0.5 text-meta text-red">
           {sessionErrorMessage(stop.error, 'The Remote Control server could not be stopped.')}
+        </p>
+      ) : null}
+      {restart.isError ? (
+        <p role="alert" className="mt-1.5 px-0.5 text-meta text-red">
+          {sessionErrorMessage(restart.error, 'The Remote Control server could not be restarted.')}
         </p>
       ) : null}
       {viewing ? (
@@ -82,6 +94,14 @@ export function RemoteRcServers({ host, account, home, onStart, sessionsOf }: Re
           onClose={() => setViewing(null)}
         />
       ) : null}
+      <UpdateServerDialog
+        server={updating}
+        onClose={() => setUpdating(null)}
+        onConfirm={(server) => {
+          setUpdating(null)
+          restart.mutate(server)
+        }}
+      />
       <StopServerDialog
         server={stopping}
         onClose={() => setStopping(null)}
@@ -129,12 +149,14 @@ type RcServerRowProps = {
   onView: () => void
   /** Asks to stop it. */
   onStop: () => void
+  /** Asks to restart it on the Claude Code installed now. */
+  onUpdate: () => void
   /** The rows of the sessions it serves. */
   children?: ReactNode
 }
 
 /** One server: its name and folder, how it places sessions, how many it serves, and what can be done with it. */
-function RcServerRow({ server, home, stopping, onView, onStop, children }: RcServerRowProps) {
+function RcServerRow({ server, home, stopping, onView, onStop, onUpdate, children }: RcServerRowProps) {
   const detail = [
     shortenHomePath(server.folder, home),
     server.spawn === 'worktree' ? 'a worktree per session' : 'sessions in this folder',
@@ -156,7 +178,7 @@ function RcServerRow({ server, home, stopping, onView, onStop, children }: RcSer
             <p className="truncate text-meta text-muted">{detail}</p>
           </div>
         </div>
-        <RcServerActions server={server} stopping={stopping} onView={onView} onStop={onStop} />
+        <RcServerActions server={server} stopping={stopping} onView={onView} onStop={onStop} onUpdate={onUpdate} />
       </div>
       {server.attention ? (
         <p className="mt-1.5 whitespace-pre-line text-meta text-amber">{server.attention.text}</p>
@@ -182,9 +204,22 @@ function ServedSessions({ children }: { children?: ReactNode }) {
 type RcServerActionsProps = Omit<RcServerRowProps, 'home' | 'children'>
 
 /** Its page on claude.ai, and its tmux window and Stop, for the ones the host started. */
-function RcServerActions({ server, stopping, onView, onStop }: RcServerActionsProps) {
+function RcServerActions({ server, stopping, onView, onStop, onUpdate }: RcServerActionsProps) {
   return (
     <div className="flex shrink-0 items-center gap-1">
+      {server.window && server.updatePending ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Restart to update"
+          title={`Restart to update Claude Code (${updateVersions(server) ?? 'a newer version is installed'})`}
+          className="text-amber hover:text-amber"
+          disabled={stopping}
+          onClick={onUpdate}
+        >
+          <RotateCw aria-hidden className="h-3.5 w-3.5" />
+        </Button>
+      ) : null}
       {server.environmentUrl ? (
         <Button
           variant="ghost"
@@ -224,6 +259,47 @@ function RcServerActions({ server, stopping, onView, onStop }: RcServerActionsPr
         </Button>
       ) : null}
     </div>
+  )
+}
+
+type UpdateServerDialogProps = {
+  /** The server to restart, asked about; closed while there's none. */
+  server: RcServer | null
+  /** Leaves it as it is. */
+  onClose: () => void
+  /** Restarts it. */
+  onConfirm: (server: RcServer) => void
+}
+
+/** Asks before restarting a server to update it: its sessions pause while it does. */
+function UpdateServerDialog({ server, onClose, onConfirm }: UpdateServerDialogProps) {
+  const serving = server?.sessions ?? 0
+  const versions = server ? updateVersions(server) : null
+  return (
+    <Dialog
+      open={server !== null}
+      title="Restart this Remote Control server to update?"
+      description={server?.folder}
+      onClose={onClose}
+      onSubmit={() => server && onConfirm(server)}
+      foot={
+        <>
+          <Button variant="ghost" size="sm" trailingKbd={<Kbd>⎋</Kbd>} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="sm" trailingKbd={<Kbd>⏎</Kbd>} onClick={() => server && onConfirm(server)}>
+            Restart
+          </Button>
+        </>
+      }
+    >
+      <p className="text-body text-ink-soft">
+        It starts again on the Claude Code installed now{versions ? ` (${versions})` : ''}
+        {serving > 0
+          ? `. The ${serving} ${serving === 1 ? 'session' : 'sessions'} it serves stop answering for a moment and come back with it.`
+          : '.'}
+      </p>
+    </Dialog>
   )
 }
 

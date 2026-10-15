@@ -11,6 +11,7 @@
 mod folders;
 mod screen;
 mod tmux;
+mod version;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -50,6 +51,9 @@ pub fn list(profile: &str) -> Vec<RcServer> {
         .map(|window| describe(&tmux, &processes, window))
         .collect();
     servers.sort_by(|a, b| a.folder.cmp(&b.folder));
+    if let Some(installed) = claude().ok().as_deref().and_then(version::installed) {
+        version::mark_updates(&mut servers, &installed);
+    }
     servers
 }
 
@@ -366,6 +370,9 @@ fn describe(tmux: &Tmux, processes: &[(i32, String)], window: Window) -> RcServe
         name: window.name,
         spawn: window.spawn,
         window: Some(window.window),
+        claude_version: version::running(window.pane_pid),
+        update_pending: false,
+        installed_version: None,
     }
 }
 
