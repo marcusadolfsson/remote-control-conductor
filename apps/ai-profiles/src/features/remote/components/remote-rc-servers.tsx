@@ -5,7 +5,7 @@ import { useState } from 'react'
 
 import { ExternalLink, Radio, Square, SquareTerminal } from 'lucide-react'
 
-import { Button, Dialog, Kbd } from '@/design'
+import { Button, cn, Dialog, Kbd } from '@/design'
 import { sessionErrorMessage } from '@/features/profiles/components/session-error-message'
 import { sessionPanelClasses, sessionRowClasses } from '@/features/profiles/components/session-row-base'
 import { shortenHomePath } from '@/features/profiles/components/shorten-home-path'
@@ -144,7 +144,7 @@ function RcServerRow({ server, home, stopping, onView, onStop, children }: RcSer
     .filter(Boolean)
     .join(' · ')
   return (
-    <li className={sessionRowClasses}>
+    <li className={cn(sessionRowClasses, 'flex-col items-stretch gap-0')}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <Radio
@@ -173,7 +173,7 @@ function ServedSessions({ children }: { children?: ReactNode }) {
     return null
   }
   return (
-    <ul aria-label="Sessions it serves" className="mt-2 ml-6 border-l border-border-soft">
+    <ul aria-label="Sessions it serves" className="mt-1.5 -mb-[8px] -mr-[13px] ml-6 border-l border-border-soft">
       {rows}
     </ul>
   )
