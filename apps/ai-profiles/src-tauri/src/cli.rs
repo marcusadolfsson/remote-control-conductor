@@ -24,6 +24,10 @@ pub use profile_shim::OPEN_PROFILE_FLAG;
 /// the first: LaunchServices never passes it there.
 pub const MCP_COMMAND: &str = "mcp";
 
+/// The first argument that starts this Mac's remembered Remote Control
+/// servers again and exits: what the login agent runs.
+pub use crate::local_rc::REVIVE_COMMAND;
+
 /// What the process was asked to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Invocation<'a> {
@@ -33,6 +37,8 @@ pub enum Invocation<'a> {
     OpenProfile(&'a str),
     /// Serve MCP on stdin and stdout until the client closes it.
     Mcp,
+    /// Start the remembered Remote Control servers that aren't running, then exit.
+    ReviveRcServers,
     /// The arguments named a mode without giving it what it needs.
     Misuse(String),
 }
@@ -44,8 +50,10 @@ pub enum Invocation<'a> {
 /// passes arguments of its own (`-psn_0_…`), and an unknown one must never
 /// stop the app from opening.
 pub fn invocation(args: &[String]) -> Invocation<'_> {
-    if args.get(1).map(String::as_str) == Some(MCP_COMMAND) {
-        return Invocation::Mcp;
+    match args.get(1).map(String::as_str) {
+        Some(MCP_COMMAND) => return Invocation::Mcp,
+        Some(REVIVE_COMMAND) => return Invocation::ReviveRcServers,
+        _ => {}
     }
     let Some(offset) = args.iter().skip(1).position(|arg| arg == OPEN_PROFILE_FLAG) else {
         return Invocation::Gui;
@@ -53,6 +61,31 @@ pub fn invocation(args: &[String]) -> Invocation<'_> {
     match args.get(offset + 2) {
         Some(id) if !id.trim().is_empty() => Invocation::OpenProfile(id),
         _ => Invocation::Misuse(format!("{OPEN_PROFILE_FLAG} needs a profile id")),
+    }
+}
+
+/// At login: start this Mac's remembered Remote Control servers again. Tries
+/// three times, a minute apart, since the network (and the Keychain) can lag
+/// behind the login. Says how each went, for the agent's log.
+pub fn revive_rc_servers() {
+    for attempt in 1..=3 {
+        let outcomes = crate::local_rc::revive();
+        let failed: Vec<_> = outcomes
+            .iter()
+            .filter(|(_, outcome)| outcome.is_err())
+            .collect();
+        for (folder, outcome) in &outcomes {
+            match outcome {
+                Ok(()) => eprintln!(
+                    "remote-control-conductor: started the Remote Control server in {folder}"
+                ),
+                Err(error) => eprintln!("remote-control-conductor: {folder}: {error}"),
+            }
+        }
+        if failed.is_empty() || attempt == 3 {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(60));
     }
 }
 
@@ -103,6 +136,10 @@ mod tests {
     fn mcp_first_serves_mcp_and_anywhere_else_is_ordinary() {
         assert_eq!(invocation(&args(&["mcp"])), Invocation::Mcp);
         assert_eq!(invocation(&args(&["-psn_0_1234", "mcp"])), Invocation::Gui);
+        assert_eq!(
+            invocation(&args(&["revive-rc-servers"])),
+            Invocation::ReviveRcServers
+        );
     }
 
     #[test]
