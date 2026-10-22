@@ -8,7 +8,9 @@
 //! here or attached to in Terminal, as a host's are. Only servers the app
 //! started are listed: those are the windows it tagged.
 
+mod agent;
 mod folders;
+mod remembered;
 mod screen;
 mod tmux;
 mod version;
@@ -28,6 +30,7 @@ use crate::error::{AppError, AppResult};
 use crate::paths;
 use crate::profiles;
 
+pub use agent::REVIVE_COMMAND;
 pub use folders::list as list_dirs;
 use screen::Screen;
 pub use tmux::SESSION as TMUX_SESSION;
@@ -57,6 +60,83 @@ pub fn list(profile: &str) -> Vec<RcServer> {
     servers
 }
 
+/// Write down a server the app started, and see the login agent is there.
+fn remember(profile: &str, server: &RcServer) {
+    let kept = remembered::add(remembered::Remembered {
+        profile: profile.into(),
+        folder: server.folder.clone(),
+        name: server.name.clone(),
+        spawn: server.spawn.clone(),
+    });
+    if let Err(error) = kept {
+        eprintln!(
+            "remote-control-conductor: couldn't remember the server in {}: {error}",
+            server.folder
+        );
+    }
+    keep_agent();
+}
+
+/// Install the login agent while a server is remembered, remove it when none
+/// is. Not from tests, which mustn't touch `~/Library/LaunchAgents`.
+fn keep_agent() {
+    #[cfg(not(test))]
+    if let Ok(program) = std::env::current_exe() {
+        if let Err(error) = agent::sync(!remembered::load().is_empty(), &program) {
+            eprintln!("remote-control-conductor: couldn't update the login agent: {error}");
+        }
+    }
+}
+
+/// Start again every remembered server that isn't running (after a restart
+/// ended tmux, say), and remember any running that the app started before it
+/// remembered them. Says, per folder, how starting went. A remembered folder
+/// that's gone, or a profile that is, is forgotten.
+pub fn revive() -> Vec<(String, Result<(), String>)> {
+    let Some(tmux) = Tmux::installed() else {
+        return Vec::new();
+    };
+    let running = tmux.windows();
+    for window in &running {
+        let known = remembered::load()
+            .iter()
+            .any(|server| server.profile == window.profile && server.folder == window.folder);
+        if !known {
+            let _ = remembered::add(remembered::Remembered {
+                profile: window.profile.clone(),
+                folder: window.folder.clone(),
+                name: window.name.clone(),
+                spawn: window.spawn.clone(),
+            });
+        }
+    }
+    let mut outcomes = Vec::new();
+    for server in remembered::load() {
+        let is_running = running
+            .iter()
+            .any(|window| window.profile == server.profile && window.folder == server.folder);
+        if is_running {
+            continue;
+        }
+        if checked_folder(&server.folder).is_err() || config_dir(&server.profile).is_err() {
+            let _ = remembered::remove(&server.profile, &server.folder);
+            continue;
+        }
+        let request = StartRcServerRequest {
+            folder: server.folder.clone(),
+            name: server.name.clone(),
+            spawn: Some(server.spawn.clone()),
+            trust_folder: false,
+        };
+        let outcome = start_window(&server.profile, &request)
+            .map(|_| ())
+            .map_err(|error| error.message());
+        outcomes.push((server.folder, outcome));
+    }
+    keep_agent();
+    outcomes
+}
+
 /// The installed tmux's version (`tmux 3.5a`), or none without tmux.
 pub fn tmux_version() -> Option<String> {
     let output = Command::new(Tmux::installed()?.binary())
@@ -71,8 +151,15 @@ pub fn tmux_version() -> Option<String> {
 
 /// Start a server in `request.folder` as `profile`, in a tmux window of its
 /// own, answering its "Trust <folder>?" when asked to; or find the one
-/// already running there.
+/// already running there. Either way it's remembered, to start again after
+/// a restart.
 pub fn start(profile: &str, request: &StartRcServerRequest) -> AppResult<StartRcServerResult> {
+    let started = start_window(profile, request)?;
+    remember(profile, &started.server);
+    Ok(started)
+}
+
+fn start_window(profile: &str, request: &StartRcServerRequest) -> AppResult<StartRcServerResult> {
     let tmux = Tmux::find()?;
     let folder = checked_folder(&request.folder)?;
     let spawn = request.spawn.clone().unwrap_or_else(|| "same-dir".into());
@@ -210,6 +297,14 @@ pub fn stop(profile: &str, pid: i32) -> AppResult<bool> {
     else {
         return Ok(false);
     };
+    // Stopped from here: not to start again after a restart.
+    if let Err(error) = remembered::remove(profile, &window.folder) {
+        eprintln!(
+            "remote-control-conductor: couldn't forget the server in {}: {error}",
+            window.folder
+        );
+    }
+    keep_agent();
     tmux.press(&window.window.pane_id, "C-c")?;
     let deadline = Instant::now() + STOP_TIMEOUT;
     while Instant::now() < deadline && is_running(pid) {

@@ -70,6 +70,16 @@ pub fn run() {
             // shared.
             host_api::start_if_shared();
 
+            // Start this Mac's Remote Control servers that a restart ended,
+            // in case the login agent didn't (or the app was opened first).
+            std::thread::spawn(|| {
+                for (folder, outcome) in local_rc::revive() {
+                    if let Err(error) = outcome {
+                        eprintln!("remote-control-conductor: {folder}: {error}");
+                    }
+                }
+            });
+
             // Build the macOS app menu manually so we can swap the default
             // About panel for a frontend-driven dialog. Everything else here
             // mirrors what Tauri would auto-generate (Services, Hide,
