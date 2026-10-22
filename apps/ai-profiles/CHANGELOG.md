@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.1](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.8.1) (2026-10-21)
+
+### Fixed
+
+* **local:** this Mac's Remote Control servers come back after a restart instead of disappearing. The app remembers each one you start (until you stop it), and a login agent starts them again when you log in, without the app open; opening the app does the same. Servers already running are remembered the first time it opens
+
 ## [0.8.0](https://github.com/marcusadolfsson/remote-control-conductor/releases/tag/conductor-v0.8.0) (2026-10-15)
 
 ### Added
