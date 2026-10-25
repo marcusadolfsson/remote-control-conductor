@@ -298,7 +298,7 @@ fn run_claude(claude: &Path, config_dir: Option<&Path>, args: &[&str]) -> Result
         Some(dir) => command.env("CLAUDE_CONFIG_DIR", dir),
         None => command.env_remove("CLAUDE_CONFIG_DIR"),
     };
-    let finished = ai_profiles_core::child::run_within(&mut command, Vec::new(), CLAUDE_TIMEOUT)
+    let finished = conductor_core::child::run_within(&mut command, Vec::new(), CLAUDE_TIMEOUT)
         .map_err(|err| format!("couldn't run claude: {err}"))?
         .ok_or("claude didn't finish in time")?;
     if finished.status.success() {

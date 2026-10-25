@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 
-use ai_profiles_core::api::{Decision, MemoryAction, Side};
-use ai_profiles_core::api::{
+use conductor_core::api::{Decision, MemoryAction, Side};
+use conductor_core::api::{
     NewSessionRequest, RemoteSession, TransferMemoryFile, TransferRequest as RemoteTransferRequest,
     WindowKey,
 };

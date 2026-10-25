@@ -20,7 +20,7 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use ai_profiles_core::api::{
+use conductor_core::api::{
     RcServer, StartRcServerRequest, StartRcServerResult, WindowKey, WindowScreen,
 };
 
@@ -236,7 +236,7 @@ fn launch(
     argv: &[String],
     tags: &[(&str, &str)],
     trust: bool,
-) -> AppResult<(ai_profiles_core::api::TmuxWindow, i32)> {
+) -> AppResult<(conductor_core::api::TmuxWindow, i32)> {
     let (window, pid) = tmux.open_window(name, folder, argv)?;
     for (option, value) in tags {
         tmux.tag(&window.window_id, option, value)?;

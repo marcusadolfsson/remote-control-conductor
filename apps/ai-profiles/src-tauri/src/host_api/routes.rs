@@ -7,20 +7,20 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use ai_profiles_core::api::{
-    ClaudeInfo, DirListing, HostInfo, PairRequest, PairResponse, Ping, RcServer, RemoteAccount,
-    RemoteSession, StartRcServerRequest, StartRcServerResult, StopResult, TmuxInfo,
-    WindowKeysRequest, WindowScreen, API_HEADER, API_VERSION,
-};
-use ai_profiles_server::error::ApiError;
-use ai_profiles_server::limits::{Lockout, RateLimit};
-use ai_profiles_server::store::{Client, Store};
 use axum::extract::{Path as UrlPath, Query, Request, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
+use conductor_core::api::{
+    ClaudeInfo, DirListing, HostInfo, PairRequest, PairResponse, Ping, RcServer, RemoteAccount,
+    RemoteSession, StartRcServerRequest, StartRcServerResult, StopResult, TmuxInfo,
+    WindowKeysRequest, WindowScreen, API_HEADER, API_VERSION,
+};
+use conductor_server::error::ApiError;
+use conductor_server::limits::{Lockout, RateLimit};
+use conductor_server::store::{Client, Store};
 use serde::Deserialize;
 
 use super::accounts::{self, SharedProfile};
@@ -236,12 +236,12 @@ async fn info() -> Result<Json<HostInfo>, ApiError> {
 /// What this Mac is, as a host.
 fn host_info() -> HostInfo {
     let claude = crate::deps::resolve_cli_binary_path("claude").map(|path| ClaudeInfo {
-        version: ai_profiles_server::hostinfo::claude_version(&path),
+        version: conductor_server::hostinfo::claude_version(&path),
         path: path.display().to_string(),
     });
     let home = dirs::home_dir().unwrap_or_default();
     HostInfo {
-        hostname: ai_profiles_server::hostinfo::hostname(),
+        hostname: conductor_server::hostinfo::hostname(),
         home: home.display().to_string(),
         server_version: format!("{} (Mac)", env!("CARGO_PKG_VERSION")),
         api_version: API_VERSION,
@@ -283,6 +283,8 @@ fn remote_account(profile: SharedProfile) -> RemoteAccount {
         sessions: 0,
         running_sessions: 0,
         pending_resume: 0,
+        // This app owns the profile: another Mac can't rename or delete it.
+        linked: true,
     }
 }
 

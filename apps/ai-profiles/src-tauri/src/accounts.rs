@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::Value;
 
-pub use ai_profiles_core::account::ProfileAccount;
-use ai_profiles_core::account::{account_from_claude_json, pretty_plan};
+pub use conductor_core::account::ProfileAccount;
+use conductor_core::account::{account_from_claude_json, pretty_plan};
 
 use crate::app_kind::AppKind;
 use crate::error::AppResult;

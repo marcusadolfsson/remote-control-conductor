@@ -365,6 +365,8 @@ export type RemoteAccount = {
   runningSessions: number
   /** Sessions a sign-out stopped, resuming at the next sign-in: a switch of account. */
   pendingResume?: number
+  /** A profile another app owns (a shared Mac's): it can't be renamed or deleted from here. */
+  linked?: boolean
 }
 
 export type TmuxWindow = {

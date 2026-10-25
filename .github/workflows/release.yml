@@ -114,77 +114,24 @@ jobs:
 
             **Mac:** download the `.dmg`, open it, drag `Remote Control Conductor.app` to Applications. This build doesn't update itself; get the next one here.
 
-            **Linux host:** the server for x86_64 or arm64, then its setup:
+            **Linux host:** the server, from [Remote Control CLI Servers](https://github.com/marcusadolfsson/remote-control-cli-servers/releases/latest), for x86_64 or arm64, then its setup:
             ```sh
-            mkdir -p ~/.local/bin && curl -fsSL https://github.com/marcusadolfsson/remote-control-conductor/releases/latest/download/remote-control-conductor-server-$(uname -m)-linux -o ~/.local/bin/remote-control-conductor-server && chmod +x ~/.local/bin/remote-control-conductor-server
+            mkdir -p ~/.local/bin && curl -fsSL https://github.com/marcusadolfsson/remote-control-cli-servers/releases/latest/download/remote-control-conductor-server-$(uname -m)-linux -o ~/.local/bin/remote-control-conductor-server && chmod +x ~/.local/bin/remote-control-conductor-server
             remote-control-conductor-server setup
             ```
-            Each server binary has a `.sha256` beside it.
+            Each server binary there has a `.sha256` beside it.
           releaseDraft: true
           prerelease: false
           args: --target universal-apple-darwin
 
-  # The server for Linux hosts, statically linked (musl) so it runs on any
-  # distribution, built natively on each architecture.
-  server:
-    strategy:
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-latest
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.tag || github.ref }}
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: '${{ matrix.arch }}-unknown-linux-musl'
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: './apps/ai-profiles/src-tauri -> target'
-          key: server-${{ matrix.arch }}
-
-      # ring compiles C with musl-gcc for the musl target.
-      - name: Install musl
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-
-      - name: Build
-        working-directory: apps/ai-profiles/src-tauri
-        run: cargo build --release --locked -p remote-control-conductor-server --target ${{ matrix.arch }}-unknown-linux-musl
-
-      - name: Package
-        run: |
-          out=remote-control-conductor-server-${{ matrix.arch }}-linux
-          cp apps/ai-profiles/src-tauri/target/${{ matrix.arch }}-unknown-linux-musl/release/remote-control-conductor-server "$out"
-          "./$out" --version
-          sha256sum "$out" > "$out.sha256"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: server-${{ matrix.arch }}
-          path: remote-control-conductor-server-*
-
-  # Attach the servers to the release the app job drafted, then publish it:
-  # never a release without all its files.
+  # Publish the release the app job drafted, once it has all its files.
+  # The Linux server is released from Remote Control CLI Servers.
   publish:
-    needs: [app, server]
+    needs: [app]
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: server-*
-          merge-multiple: true
-
-      - name: Attach the servers
-        run: gh release upload "$TAG" remote-control-conductor-server-* --clobber --repo "$GITHUB_REPOSITORY"
-
       - name: Publish release
         run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"

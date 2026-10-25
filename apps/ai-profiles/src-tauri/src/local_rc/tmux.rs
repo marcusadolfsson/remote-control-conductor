@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use ai_profiles_core::api::TmuxWindow;
+use conductor_core::api::TmuxWindow;
 
 use crate::deps;
 use crate::error::{AppError, AppResult};

@@ -21,10 +21,10 @@ dependencies = [
 name = "ai-profiles"
 version = "0.8.1"
 dependencies = [
- "ai-profiles-core",
  "async-trait",
  "axum",
  "chrono",
+ "conductor-core",
  "dirs",
  "hyper",
  "hyper-util",
@@ -57,20 +57,6 @@ dependencies = [
  "tokio-rustls",
  "trash",
  "uuid",
-]
-
-[[package]]
-name = "ai-profiles-core"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "flate2",
- "rustls",
- "serde",
- "serde_json",
- "sha2",
- "subtle",
- "tempfile",
 ]
 
 [[package]]
@@ -632,6 +618,20 @@ name = "compression-core"
 version = "0.4.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc14f565cf027a105f7a44ccf9e5b424348421a1d8952a8fc9d499d313107789"
+
+[[package]]
+name = "conductor-core"
+version = "0.11.0"
+source = "git+https://github.com/marcusadolfsson/remote-control-cli-servers?tag=v0.11.0#073709260255495f626ed1f845594c2f958e24e1"
+dependencies = [
+ "base64 0.22.1",
+ "flate2",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+]
 
 [[package]]
 name = "cookie"
@@ -3297,13 +3297,14 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "remote-control-conductor-server"
-version = "0.8.1"
+version = "0.11.0"
+source = "git+https://github.com/marcusadolfsson/remote-control-cli-servers?tag=v0.11.0#073709260255495f626ed1f845594c2f958e24e1"
 dependencies = [
- "ai-profiles-core",
  "axum",
  "base64 0.22.1",
  "chrono",
  "clap",
+ "conductor-core",
  "dirs",
  "flate2",
  "getrandom 0.3.4",
@@ -3311,14 +3312,13 @@ dependencies = [
  "hyper-util",
  "if-addrs",
  "ipnet",
+ "libc",
  "rcgen",
- "reqwest 0.12.28",
  "rustls",
  "serde",
  "serde_json",
  "sha2",
  "subtle",
- "tempfile",
  "tokio",
  "tokio-rustls",
  "toml 0.8.2",

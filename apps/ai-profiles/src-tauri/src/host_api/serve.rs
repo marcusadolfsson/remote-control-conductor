@@ -5,8 +5,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use ai_profiles_server::config::Config;
 use axum::{Extension, Router};
+use conductor_server::config::Config;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
 use tokio::net::TcpListener;

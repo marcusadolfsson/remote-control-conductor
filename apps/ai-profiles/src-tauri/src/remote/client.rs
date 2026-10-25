@@ -4,8 +4,8 @@
 
 use std::time::Duration;
 
-use ai_profiles_core::api::{ErrorBody, CLIENT_HEADER};
-use ai_profiles_core::tls::pinned_client_config;
+use conductor_core::api::{ErrorBody, CLIENT_HEADER};
+use conductor_core::tls::pinned_client_config;
 use reqwest::Method;
 use serde::de::DeserializeOwned;
 use serde::Serialize;

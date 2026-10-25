@@ -2,7 +2,7 @@
 //! its page on claude.ai), or what it's waiting for someone to answer. The
 //! same reading the Linux server does of its own servers' windows.
 
-use ai_profiles_core::api::Attention;
+use conductor_core::api::Attention;
 
 /// What a server's window says.
 #[derive(Debug, Clone, PartialEq, Eq)]

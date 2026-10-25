@@ -143,7 +143,7 @@ meant to face the internet, and by default it only answers Tailscale, WireGuard 
 ```sh
 sudo apt install tmux
 curl -fsSL https://claude.ai/install.sh | bash
-mkdir -p ~/.local/bin && curl -fsSL https://github.com/marcusadolfsson/remote-control-conductor/releases/latest/download/remote-control-conductor-server-$(uname -m)-linux -o ~/.local/bin/remote-control-conductor-server && chmod +x ~/.local/bin/remote-control-conductor-server
+mkdir -p ~/.local/bin && curl -fsSL https://github.com/marcusadolfsson/remote-control-cli-servers/releases/latest/download/remote-control-conductor-server-$(uname -m)-linux -o ~/.local/bin/remote-control-conductor-server && chmod +x ~/.local/bin/remote-control-conductor-server
 remote-control-conductor-server setup
 ```
 
@@ -227,10 +227,11 @@ The `.app` ends up in `apps/ai-profiles/src-tauri/target/release/bundle/macos/`,
 in `dmg/`. A local build isn't notarized, so macOS asks the first time you open it: right-click the app,
 then Open.
 
-To build the Linux server from a Mac, run
-`cargo zigbuild --release -p remote-control-conductor-server --target x86_64-unknown-linux-musl` in
-`apps/ai-profiles/src-tauri`, or `cargo install --locked --git https://github.com/marcusadolfsson/remote-control-conductor remote-control-conductor-server`
-on the server itself.
+The Linux server lives in [Remote Control CLI Servers](https://github.com/marcusadolfsson/remote-control-cli-servers),
+with the Claude Code plugin, and its releases have the binaries. The app builds against that server's crates, at
+the tag set in `apps/ai-profiles/src-tauri/Cargo.toml`. To build the server yourself, run
+`cargo install --locked --git https://github.com/marcusadolfsson/remote-control-cli-servers remote-control-conductor-server`
+on the machine itself.
 
 To run the tests, use `cargo test` and `cargo clippy --all-targets -- -D warnings` in
 `apps/ai-profiles/src-tauri`, and `pnpm test` in `apps/ai-profiles`. On Node 25 and later, vitest needs
