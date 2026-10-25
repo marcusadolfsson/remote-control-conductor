@@ -47,6 +47,7 @@ pub enum CodexRpcError {
 /// Something that sends app-server requests and waits for their results: a
 /// running [`CodexRpc`], or a stand-in in tests.
 #[async_trait]
+#[allow(clippy::double_must_use)] // async_trait's boxed future is already must_use
 pub trait CodexTransport: Send {
     /// Call `method` with `params` (`null` for none) and return the result.
     async fn request(&mut self, method: &str, params: Value) -> Result<Value, CodexRpcError>;

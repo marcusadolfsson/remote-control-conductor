@@ -79,6 +79,7 @@ const ROTATE_POLL: Duration = Duration::from_millis(150);
 const REFRESH_BACKOFF: Duration = Duration::from_secs(60);
 
 #[async_trait]
+#[allow(clippy::double_must_use)] // async_trait's boxed future is already must_use
 pub trait CliRefresher: Send + Sync {
     /// Best-effort: trigger a token refresh for the given profile config dir.
     /// Always returns — success is verified by the caller re-issuing the
