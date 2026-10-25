@@ -11,7 +11,7 @@ pub mod secrets;
 
 use std::process::Command;
 
-use ai_profiles_core::api::{
+use conductor_core::api::{
     ArchiveResult, ArchivedSession, CreateAccountRequest, DeleteArchiveResult, DeletedAccount,
     DirListing, HostInfo, HostSettings, LaunchResult, LoginCodeRequest, LoginStart, LogoutRequest,
     LogoutResult, MemoryMergeRequest, MemoryMergeResult, MoveProgress, NewSessionRequest,
@@ -20,7 +20,7 @@ use ai_profiles_core::api::{
     StartRcServerResult, StopResult, TransferPlan, TransferReport, TransferRequest, WindowKey,
     WindowKeysRequest, WindowScreen,
 };
-use ai_profiles_core::pairing::{self, display_fingerprint};
+use conductor_core::pairing::{self, display_fingerprint};
 use serde::Serialize;
 
 use self::client::{remote_error, Answer, HostClient};

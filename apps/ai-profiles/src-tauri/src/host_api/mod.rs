@@ -16,10 +16,10 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use ai_profiles_core::pairing::{self, display_fingerprint, PairingCode};
-use ai_profiles_server::certs::Identity;
-use ai_profiles_server::config::Config;
-use ai_profiles_server::store::{random_token, Store};
+use conductor_core::pairing::{self, display_fingerprint, PairingCode};
+use conductor_server::certs::Identity;
+use conductor_server::config::Config;
+use conductor_server::store::{random_token, Store};
 use serde::Serialize;
 use tokio::sync::oneshot;
 
@@ -162,7 +162,7 @@ pub fn new_code() -> AppResult<SharingCode> {
     let identity = Identity::load_or_create(&dir)?;
     let hosts: Vec<String> = reachable_hosts()
         .into_iter()
-        .map(|host| ai_profiles_server::hostinfo::with_port(&host, PORT))
+        .map(|host| conductor_server::hostinfo::with_port(&host, PORT))
         .collect();
     let secret = random_token(18);
     Store::new(&dir).add_pending(&secret, None)?;
@@ -194,7 +194,7 @@ fn reachable_hosts() -> Vec<String> {
         .map(|interface| interface.ip())
         .collect::<Vec<_>>();
     let mut hosts = tailscale_addresses(&addresses);
-    hosts.push(ai_profiles_server::hostinfo::hostname());
+    hosts.push(conductor_server::hostinfo::hostname());
     hosts
 }
 

@@ -61,7 +61,7 @@ export function EditRemoteProfileDialog({
   const save = useSetRemoteProfileColor(host.id)
   const toast = useToast()
   const running = account?.runningSessions ?? 0
-  const fixed = account?.isDefault ?? false
+  const fixed = Boolean(account?.isDefault || account?.linked)
   const rename = remoteRename({ name, newName, taken, fixed, hostLabel: host.label })
   const busy = renameProfile.isPending || save.isPending
   const ready = !busy && rename.ok && isValidHexColor(picked)

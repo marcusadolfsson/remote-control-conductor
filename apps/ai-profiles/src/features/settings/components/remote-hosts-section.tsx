@@ -97,9 +97,9 @@ function SetupGuide({ initiallyOpen, onPair }: { initiallyOpen: boolean; onPair:
           </GuideStep>
           <GuideStep number={2} title="Install remote-control-conductor-server">
             <p className="text-muted">A prebuilt binary, for x86_64 or arm64 Linux:</p>
-            <CopyLine text="mkdir -p ~/.local/bin && curl -fsSL https://github.com/marcusadolfsson/remote-control-conductor/releases/latest/download/remote-control-conductor-server-$(uname -m)-linux -o ~/.local/bin/remote-control-conductor-server && chmod +x ~/.local/bin/remote-control-conductor-server" />
+            <CopyLine text="mkdir -p ~/.local/bin && curl -fsSL https://github.com/marcusadolfsson/remote-control-cli-servers/releases/latest/download/remote-control-conductor-server-$(uname -m)-linux -o ~/.local/bin/remote-control-conductor-server && chmod +x ~/.local/bin/remote-control-conductor-server" />
             <p className="text-muted">Or built from source, which takes a Rust toolchain (rustup.rs):</p>
-            <CopyLine text="cargo install --locked --git https://github.com/marcusadolfsson/remote-control-conductor remote-control-conductor-server" />
+            <CopyLine text="cargo install --locked --git https://github.com/marcusadolfsson/remote-control-cli-servers remote-control-conductor-server" />
           </GuideStep>
           <GuideStep number={3} title="Run its setup">
             <p className="text-muted">

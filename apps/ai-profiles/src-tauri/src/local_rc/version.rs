@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use ai_profiles_core::api::RcServer;
+use conductor_core::api::RcServer;
 
 /// The program process `pid` runs.
 fn program(pid: i32) -> Option<PathBuf> {

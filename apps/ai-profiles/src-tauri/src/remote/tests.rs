@@ -4,15 +4,15 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use ai_profiles_core::api::WindowKey;
-use ai_profiles_core::pairing::{encode, PairingCode};
-use ai_profiles_core::registry::RegistryEntry;
-use ai_profiles_server::certs::Identity;
-use ai_profiles_server::config::Config;
-use ai_profiles_server::procs::ProcessTable;
-use ai_profiles_server::routes::ServerState;
-use ai_profiles_server::serve::serve;
-use ai_profiles_server::store::Store;
+use conductor_core::api::WindowKey;
+use conductor_core::pairing::{encode, PairingCode};
+use conductor_core::registry::RegistryEntry;
+use conductor_server::certs::Identity;
+use conductor_server::config::Config;
+use conductor_server::procs::ProcessTable;
+use conductor_server::routes::ServerState;
+use conductor_server::serve::serve;
+use conductor_server::store::Store;
 
 use super::hosts::HostList;
 use super::secrets::{MemoryStore, SecretStore};
@@ -187,7 +187,7 @@ async fn refuses_a_server_with_another_certificate() {
         v: 1,
         hosts: vec![server.address.clone()],
         secret: "s".into(),
-        fp: ai_profiles_core::pairing::fingerprint(b"a different certificate"),
+        fp: conductor_core::pairing::fingerprint(b"a different certificate"),
     });
     let error = pair(&list, &secrets, &impostor, None).await.unwrap_err();
     assert_eq!(code_of(error), "cert_mismatch");

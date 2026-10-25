@@ -152,7 +152,7 @@ function ProfileMenu({ account, onOpen }: ProfileMenuProps) {
         >
           {account.signedIn ? 'Sign out…' : 'Sign in…'}
         </DropdownMenuItem>
-        {account.isDefault ? null : (
+        {account.isDefault || account.linked ? null : (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem

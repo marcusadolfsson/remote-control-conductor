@@ -27,7 +27,7 @@ use crate::usage::{
     quota::{ClaudeQuotaCache, ClaudeQuotaProvider},
     ProfileUsage,
 };
-use ai_profiles_core::api::{
+use conductor_core::api::{
     DeletedAccount, DirListing, HostInfo, HostSettings, LaunchResult as RemoteLaunch, LoginStart,
     NewSessionRequest, RcServer, RemoteAccount, RemoteSession, StartRcServerRequest,
     StartRcServerResult, WindowKey, WindowScreen,
@@ -375,7 +375,7 @@ pub async fn remote_rename_session(
     account: String,
     session_id: String,
     name: String,
-) -> AppResult<ai_profiles_core::api::RenameSessionResult> {
+) -> AppResult<conductor_core::api::RenameSessionResult> {
     remote::rename_session(
         &HostList::default_list()?,
         secrets::store(),
@@ -394,7 +394,7 @@ pub async fn remote_transfer_plan(
     account: String,
     session_id: String,
     to: String,
-) -> AppResult<ai_profiles_core::api::TransferPlan> {
+) -> AppResult<conductor_core::api::TransferPlan> {
     remote::transfer_plan(
         &HostList::default_list()?,
         secrets::store(),
@@ -412,8 +412,8 @@ pub async fn remote_transfer_session(
     host_id: String,
     account: String,
     session_id: String,
-    request: ai_profiles_core::api::TransferRequest,
-) -> AppResult<ai_profiles_core::api::TransferReport> {
+    request: conductor_core::api::TransferRequest,
+) -> AppResult<conductor_core::api::TransferReport> {
     remote::transfer(
         &HostList::default_list()?,
         secrets::store(),
@@ -430,7 +430,7 @@ pub async fn remote_transfer_session(
 pub async fn remote_transfer_progress(
     host_id: String,
     progress_id: String,
-) -> AppResult<Option<ai_profiles_core::api::MoveProgress>> {
+) -> AppResult<Option<conductor_core::api::MoveProgress>> {
     remote::transfer_progress(
         &HostList::default_list()?,
         secrets::store(),
@@ -455,7 +455,7 @@ pub async fn remote_merge_memory(
         &host_id,
         &account,
         &session_id,
-        &ai_profiles_core::api::MemoryMergeRequest { to, path },
+        &conductor_core::api::MemoryMergeRequest { to, path },
     )
     .await
     .map(|result| result.merged)
@@ -484,7 +484,7 @@ pub async fn remote_archive_session(
 pub async fn remote_archived_sessions(
     host_id: String,
     account: String,
-) -> AppResult<Vec<ai_profiles_core::api::ArchivedSession>> {
+) -> AppResult<Vec<conductor_core::api::ArchivedSession>> {
     remote::archived(
         &HostList::default_list()?,
         secrets::store(),

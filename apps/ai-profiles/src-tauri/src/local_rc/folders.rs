@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use ai_profiles_core::api::{DirEntry, DirListing};
+use conductor_core::api::{DirEntry, DirListing};
 
 use crate::error::{AppError, AppResult};
 
