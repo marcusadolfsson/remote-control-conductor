@@ -47,6 +47,7 @@ fn parse_retry_after(header: Option<&str>) -> Option<Duration> {
 }
 
 #[async_trait]
+#[allow(clippy::double_must_use)] // async_trait's boxed future is already must_use
 pub trait UsageClient: Send + Sync {
     async fn fetch(&self, access_token: &str) -> Result<HttpResponse, QuotaError>;
 }

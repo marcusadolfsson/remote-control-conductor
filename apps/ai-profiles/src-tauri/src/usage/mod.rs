@@ -109,6 +109,7 @@ use chrono::Utc;
 /// orchestration in `build`/`build_with_cli_refresh` is app-agnostic — it only
 /// sees this trait.
 #[async_trait::async_trait]
+#[allow(clippy::double_must_use)] // async_trait's boxed future is already must_use
 pub trait QuotaProvider: Send + Sync {
     /// Fetch the profile's quota for the config dir (Claude: cli-config;
     /// Codex: CODEX_HOME). Returns a categorised `QuotaError` on failure.
